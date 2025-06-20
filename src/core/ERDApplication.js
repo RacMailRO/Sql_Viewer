@@ -4,6 +4,8 @@ import { DiagramState } from './DiagramState.js';
 import { ERDRenderer } from '../visualization/ERDRenderer.js';
 import { FileImporter } from '../ui/FileImporter.js';
 import { ExportManager } from '../export/ExportManager.js';
+import { EnhancedExportManager } from '../export/EnhancedExportManager.js';
+import { LayoutManager } from './LayoutManager.js';
 import { LayoutAlgorithm } from '../algorithms/LayoutAlgorithm.js';
 
 /**
@@ -17,6 +19,8 @@ export class ERDApplication {
         this.renderer = null;
         this.fileImporter = null;
         this.exportManager = null;
+        this.enhancedExportManager = null;
+        this.layoutManager = null;
         this.layoutAlgorithm = null;
         
         // UI elements
@@ -122,6 +126,15 @@ export class ERDApplication {
         this.exportManager = new ExportManager({
             eventBus: this.eventBus
         });
+        
+        // Initialize enhanced export manager
+        this.enhancedExportManager = new EnhancedExportManager(
+            this.renderer?.d3,
+            this.eventBus
+        );
+        
+        // Initialize layout manager
+        this.layoutManager = new LayoutManager(this.eventBus);
         
         // Initialize file-saver in the export manager
         await this.exportManager.init();
@@ -276,7 +289,15 @@ export class ERDApplication {
         if (!file) return;
 
         try {
-            this.showLoading('Processing schema...');
+            // Show specific loading message based on file type
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+            let loadingMessage = 'Processing schema...';
+            
+            if (fileExtension === 'csv') {
+                loadingMessage = 'Parsing CSV and generating relationships...';
+            }
+            
+            this.showLoading(loadingMessage);
             
             const schema = await this.fileImporter.importFile(file);
             this.schemaModel.loadSchema(schema);

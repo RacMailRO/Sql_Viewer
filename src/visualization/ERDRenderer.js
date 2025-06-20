@@ -111,15 +111,16 @@ export class ERDRenderer {
      */
     setupDragBehavior() {
         const d3 = this.d3;
+        const self = this;
         this.dragBehavior = d3.drag()
-            .on('start', (event, d) => {
-                this.onDragStart(event, d);
+            .on('start', function(event, d) {
+                self.onDragStart(event, d, this);
             })
-            .on('drag', (event, d) => {
-                this.onDrag(event, d);
+            .on('drag', function(event, d) {
+                self.onDrag(event, d, this);
             })
-            .on('end', (event, d) => {
-                this.onDragEnd(event, d);
+            .on('end', function(event, d) {
+                self.onDragEnd(event, d, this);
             });
     }
 
@@ -395,16 +396,31 @@ export class ERDRenderer {
         // Generate path
         const path = this.generateConnectionPath(sourcePoint, targetPoint);
 
-        // Draw connection line
+        // Draw invisible thicker path for easier hover detection
         connectionGroup.append('path')
-            .attr('class', 'connection-line')
+            .attr('class', 'connection-hover-area')
             .attr('d', path)
+            .attr('stroke', 'transparent')
+            .attr('stroke-width', 12)
+            .attr('fill', 'none')
+            .style('cursor', 'pointer')
             .on('mouseenter', (event) => {
                 this.onConnectionMouseEnter(event, relationshipData);
             })
             .on('mouseleave', (event) => {
                 this.onConnectionMouseLeave(event, relationshipData);
+            })
+            .on('click', (event) => {
+                this.onConnectionClick(event, relationshipData);
             });
+
+        // Draw visible connection line
+        const connectionLine = connectionGroup.append('path')
+            .attr('class', 'connection-line')
+            .attr('d', path);
+
+        // Store connection data for highlighting
+        connectionLine.datum(relationshipData);
 
         // Add relationship markers
         this.addRelationshipMarkers(connectionGroup, sourcePoint, targetPoint, relationshipData.type);
@@ -438,39 +454,27 @@ export class ERDRenderer {
 
         const tableCenterX = tablePos.x + tableSize.width / 2;
         const targetCenterX = targetPos.x + (targetPos.width || tableSize.width) / 2;
-        const targetCenterY = targetPos.y + (targetPos.height || tableSize.height) / 2;
 
-        // Determine which side of the table to connect to
-        const dx = targetCenterX - tableCenterX;
-        const dy = targetCenterY - columnY;
-
+        // ALWAYS connect from the sides at column level - never from top or bottom
         let connectionX, connectionY;
 
-        if (Math.abs(dx) > Math.abs(dy)) {
-            // Connect to left or right side at column level
-            if (dx > 0) {
-                // Connect to right side
-                connectionX = tablePos.x + tableSize.width;
-                connectionY = columnY;
-            } else {
-                // Connect to left side
-                connectionX = tablePos.x;
-                connectionY = columnY;
-            }
+        // Determine which side of the table to connect to based on relative position
+        if (targetCenterX > tableCenterX) {
+            // Connect to right side at column level
+            connectionX = tablePos.x + tableSize.width;
+            connectionY = columnY;
         } else {
-            // Connect to top or bottom side
-            if (dy > 0) {
-                // Connect to bottom side
-                connectionX = tableCenterX;
-                connectionY = tablePos.y + tableSize.height;
-            } else {
-                // Connect to top side
-                connectionX = tableCenterX;
-                connectionY = tablePos.y;
-            }
+            // Connect to left side at column level
+            connectionX = tablePos.x;
+            connectionY = columnY;
         }
 
-        return { x: connectionX, y: connectionY };
+        return {
+            x: connectionX,
+            y: connectionY,
+            side: targetCenterX > tableCenterX ? 'right' : 'left',
+            columnY: columnY
+        };
     }
 
     /**
@@ -480,13 +484,36 @@ export class ERDRenderer {
      * @returns {string} SVG path string
      */
     generateConnectionPath(sourcePoint, targetPoint) {
-        // Use orthogonal (right-angle) connections
-        const midX = (sourcePoint.x + targetPoint.x) / 2;
+        // Enhanced orthogonal routing with intelligent path planning
+        const minDistance = 30; // Minimum distance for clean routing
+        const dx = targetPoint.x - sourcePoint.x;
+        const dy = targetPoint.y - sourcePoint.y;
         
-        return `M ${sourcePoint.x} ${sourcePoint.y} 
-                L ${midX} ${sourcePoint.y} 
-                L ${midX} ${targetPoint.y} 
-                L ${targetPoint.x} ${targetPoint.y}`;
+        // Determine if we need multi-segment routing
+        if (Math.abs(dx) < minDistance * 2) {
+            // Close tables - use extended routing to avoid overlap
+            const extension = minDistance;
+            const midX1 = sourcePoint.side === 'right' ?
+                sourcePoint.x + extension : sourcePoint.x - extension;
+            const midX2 = targetPoint.side === 'left' ?
+                targetPoint.x - extension : targetPoint.x + extension;
+            const midY = (sourcePoint.y + targetPoint.y) / 2;
+            
+            return `M ${sourcePoint.x} ${sourcePoint.y}
+                    L ${midX1} ${sourcePoint.y}
+                    L ${midX1} ${midY}
+                    L ${midX2} ${midY}
+                    L ${midX2} ${targetPoint.y}
+                    L ${targetPoint.x} ${targetPoint.y}`;
+        } else {
+            // Standard orthogonal routing
+            const midX = (sourcePoint.x + targetPoint.x) / 2;
+            
+            return `M ${sourcePoint.x} ${sourcePoint.y}
+                    L ${midX} ${sourcePoint.y}
+                    L ${midX} ${targetPoint.y}
+                    L ${targetPoint.x} ${targetPoint.y}`;
+        }
     }
 
     /**
@@ -561,10 +588,12 @@ export class ERDRenderer {
      * Handle drag start
      * @param {Object} event - Drag event
      * @param {Object} data - Table data
+     * @param {Element} element - DOM element being dragged
      */
-    onDragStart(event, data) {
+    onDragStart(event, data, element) {
         const d3 = this.d3;
-        d3.select(event.sourceEvent.target.parentNode).classed('dragging', true);
+        // Select the element that has the drag behavior attached
+        d3.select(element).classed('dragging', true);
         
         if (this.eventBus) {
             this.eventBus.emit('table:drag-start', data);
@@ -575,11 +604,22 @@ export class ERDRenderer {
      * Handle drag
      * @param {Object} event - Drag event
      * @param {Object} data - Table data
+     * @param {Element} element - DOM element being dragged
      */
-    onDrag(event, data) {
+    onDrag(event, data, element) {
         const d3 = this.d3;
-        const transform = d3.select(event.sourceEvent.target.parentNode)
+        // Update the transform of the current table group being dragged
+        d3.select(element)
             .attr('transform', `translate(${event.x}, ${event.y})`);
+        
+        // Update the layout data
+        if (this.currentLayout && this.currentLayout.tables) {
+            const table = this.currentLayout.tables.find(t => t.name === data.name);
+            if (table) {
+                table.x = event.x;
+                table.y = event.y;
+            }
+        }
         
         // Update connections in real-time
         this.updateConnectionsForTable(data.name, event.x, event.y);
@@ -593,10 +633,12 @@ export class ERDRenderer {
      * Handle drag end
      * @param {Object} event - Drag event
      * @param {Object} data - Table data
+     * @param {Element} element - DOM element being dragged
      */
-    onDragEnd(event, data) {
+    onDragEnd(event, data, element) {
         const d3 = this.d3;
-        d3.select(event.sourceEvent.target.parentNode).classed('dragging', false);
+        // Select the element that has the drag behavior attached
+        d3.select(element).classed('dragging', false);
         
         if (this.eventBus) {
             this.eventBus.emit('table:drag-end', { table: data, x: event.x, y: event.y });
@@ -686,10 +728,17 @@ export class ERDRenderer {
      */
     onConnectionMouseEnter(event, data) {
         const d3 = this.d3;
-        d3.select(event.currentTarget).classed('highlighted', true);
         
-        // Show tooltip
-        this.showTooltip(event, data);
+        // Highlight the connection line
+        const connectionGroup = d3.select(event.currentTarget.parentNode);
+        connectionGroup.select('.connection-line').classed('highlighted', true);
+        connectionGroup.select('.connection-marker').classed('highlighted', true);
+        
+        // Highlight connected columns in both tables
+        this.highlightConnectedColumns(data, true);
+        
+        // Show enhanced tooltip
+        this.showConnectionTooltip(event, data);
         
         if (this.eventBus) {
             this.eventBus.emit('connection:hover', data);
@@ -703,7 +752,14 @@ export class ERDRenderer {
      */
     onConnectionMouseLeave(event, data) {
         const d3 = this.d3;
-        d3.select(event.currentTarget).classed('highlighted', false);
+        
+        // Remove connection highlighting
+        const connectionGroup = d3.select(event.currentTarget.parentNode);
+        connectionGroup.select('.connection-line').classed('highlighted', false);
+        connectionGroup.select('.connection-marker').classed('highlighted', false);
+        
+        // Remove column highlighting
+        this.highlightConnectedColumns(data, false);
         
         // Hide tooltip
         this.hideTooltip();
@@ -711,6 +767,62 @@ export class ERDRenderer {
         if (this.eventBus) {
             this.eventBus.emit('connection:hover-end', data);
         }
+    }
+
+    /**
+     * Handle connection click
+     * @param {Object} event - Mouse event
+     * @param {Object} data - Relationship data
+     */
+    onConnectionClick(event, data) {
+        // Future: Open relationship editor or show detailed info
+        console.log('Connection clicked:', data);
+        
+        if (this.eventBus) {
+            this.eventBus.emit('connection:click', data);
+        }
+    }
+
+    /**
+     * Highlight connected columns in tables
+     * @param {Object} relationshipData - Relationship data
+     * @param {boolean} highlight - Whether to highlight or remove highlight
+     */
+    highlightConnectedColumns(relationshipData, highlight) {
+        const d3 = this.d3;
+        
+        // Find and highlight source column
+        this.tablesGroup.selectAll('.table-group')
+            .filter(d => d.name === relationshipData.sourceTable)
+            .selectAll('.column-group')
+            .filter(d => d.name === relationshipData.sourceColumn)
+            .classed('highlight-column', highlight);
+            
+        // Find and highlight target column
+        this.tablesGroup.selectAll('.table-group')
+            .filter(d => d.name === relationshipData.targetTable)
+            .selectAll('.column-group')
+            .filter(d => d.name === relationshipData.targetColumn)
+            .classed('highlight-column', highlight);
+    }
+
+    /**
+     * Show enhanced connection tooltip
+     * @param {Object} event - Mouse event
+     * @param {Object} data - Relationship data
+     */
+    showConnectionTooltip(event, data) {
+        const content = `
+            <div class="tooltip-relationship">
+                <div class="relationship-title">${data.type || 'Relationship'}</div>
+                <div class="relationship-details">
+                    <div class="source">${data.sourceTable}.${data.sourceColumn}</div>
+                    <div class="arrow">→</div>
+                    <div class="target">${data.targetTable}.${data.targetColumn}</div>
+                </div>
+            </div>
+        `;
+        this.showTooltip(event, { content });
     }
 
     /**

@@ -88,6 +88,11 @@ export class LayoutAlgorithm {
      * @returns {Array} Tables with positions
      */
     applyForceDirectedLayout(tables, relationships) {
+        // For CSV data with many tables, use a simpler grid layout first
+        if (tables.length > 5) {
+            return this.applyGridLayout(tables);
+        }
+
         const iterations = 100;
         const coolingFactor = 0.95;
         let temperature = 100;
@@ -110,6 +115,31 @@ export class LayoutAlgorithm {
 
         // Center the layout
         this.centerLayout(tables);
+
+        return tables;
+    }
+
+    /**
+     * Apply simple grid layout for many tables
+     * @param {Array} tables - Tables to layout
+     * @returns {Array} Tables with positions
+     */
+    applyGridLayout(tables) {
+        const cols = Math.ceil(Math.sqrt(tables.length));
+        const spacing = 300; // Increased spacing between tables
+        let col = 0;
+        let row = 0;
+
+        tables.forEach((table, index) => {
+            table.x = col * spacing + 50;
+            table.y = row * spacing + 50;
+            
+            col++;
+            if (col >= cols) {
+                col = 0;
+                row++;
+            }
+        });
 
         return tables;
     }
