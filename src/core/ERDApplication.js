@@ -332,7 +332,17 @@ export class ERDApplication {
             this.diagramState.setLayout(layout);
             
             // Render the diagram
-            this.renderer.render(schema, layout);
+            if (this.useEnhancedRenderer) {
+                this.renderer.render(schema);
+            } else {
+                this.renderer.render(schema, layout);
+            }
+            
+            // Update filtering manager with new schema
+            this.filteringManager.setSchemaData(schema);
+            
+            // Run statistical analysis
+            this.statisticalAnalyzer.analyzeSchema(schema);
             
             // Update UI
             this.updateUI();
