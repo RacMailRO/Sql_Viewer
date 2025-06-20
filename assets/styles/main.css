@@ -319,3 +319,30 @@ body {
     display: none;
   }
 }
+
+/* 
+  Add this to your main CSS file.
+  This is the most critical rule. It tells the browser that the SVG
+  and its contents should not be the target of pointer events that
+  could initiate a native drag, but D3's listeners will still work.
+*/
+.table-group {
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+    
+    /* This can sometimes help by ensuring child elements
+       don't accidentally capture events from the group. */
+    pointer-events: none;
+}
+
+/*
+  Since the group now has 'pointer-events: none', we must re-enable
+  them on the visible parts that the user needs to interact with.
+  The 'all' value is a simple way to reset it.
+*/
+.table-group > * {
+    pointer-events: all;
+}

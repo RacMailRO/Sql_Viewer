@@ -18,13 +18,13 @@ export class ERDRenderer {
         this.mainGroup = null;
         this.tablesGroup = null;
         this.connectionsGroup = null;
-        
+
         this.zoomBehavior = null;
         this.dragBehavior = null;
-        
+
         this.currentSchema = null;
         this.currentLayout = null;
-        
+
         this.selectedTable = null;
         this.hoveredTable = null;
         this.initialized = false;
@@ -35,7 +35,7 @@ export class ERDRenderer {
      */
     async init() {
         if (this.initialized) return;
-        
+
         try {
             // Try to import D3.js from CDN for production compatibility
             this.d3 = await import('https://cdn.skypack.dev/d3@7');
@@ -49,7 +49,7 @@ export class ERDRenderer {
                 throw new Error('D3.js could not be loaded');
             }
         }
-        
+
         this.initialize();
         this.initialized = true;
     }
@@ -84,6 +84,8 @@ export class ERDRenderer {
         // Setup zoom and pan
         this.setupZoomAndPan();
 
+        this.attachDebugListeners();
+
         // Setup drag behavior
         this.setupDragBehavior();
     }
@@ -95,9 +97,16 @@ export class ERDRenderer {
         const d3 = this.d3;
         this.zoomBehavior = d3.zoom()
             .scaleExtent([this.options.minZoom, this.options.maxZoom])
+            .filter(event => {
+                // This is the key condition.
+                // Return true to allow zoom/pan, false to ignore the event.
+                // We ignore the event if the mouse is on a table-group (or one of its children).
+                // This prevents panning when the user intends to drag a table.
+                return !event.target.closest('.table-group');
+            })
             .on('zoom', (event) => {
                 this.mainGroup.attr('transform', event.transform);
-                
+
                 if (this.eventBus) {
                     this.eventBus.emit('zoom:changed', event.transform.k);
                 }
@@ -109,131 +118,91 @@ export class ERDRenderer {
     /**
      * Setup drag behavior for tables
      */
-    setupDragBehavior() {
-        const d3 = this.d3;
-        const self = this;
-        
-        this.dragBehavior = d3.drag()
-            .on('start', function(event, d) {
-                // Get the table group element
-                const tableGroup = d3.select(this);
-                
-                // Get current position from transform
-                const transform = tableGroup.attr('transform');
-                let startX = 0, startY = 0;
-                
-                if (transform) {
-                    const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
-                    if (match) {
-                        startX = parseFloat(match[1]);
-                        startY = parseFloat(match[2]);
-                    }
+   setupDragBehavior() {
+    const d3 = this.d3;
+    const self = this;
+
+    this.dragBehavior = d3.drag()
+        // Define the drag subject to prevent the initial jump.
+        .subject(function(event, d) {
+            const group = d3.select(this);
+            const transform = group.attr('transform');
+            if (transform) {
+                const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
+                if (match) {
+                    return { x: parseFloat(match[1]), y: parseFloat(match[2]) };
                 }
-                
-                // Get the SVG element and its transform
-                const svg = d3.select(self.container).select('svg');
-                const mainGroup = svg.select('.main-group');
-                
-                // Get the current zoom/pan transform
-                let zoomTransform = d3.zoomTransform(mainGroup.node());
-                if (!zoomTransform) {
-                    zoomTransform = d3.zoomIdentity;
+            }
+            return { x: 0, y: 0 };
+        })
+        .on('start', function(event, d) {
+            // We only need stopPropagation to prevent the pan/zoom conflict.
+            // The new CSS rules should handle the browser's native drag.
+            event.sourceEvent.stopPropagation();
+            
+            d3.select(this).classed('dragging', true).raise();
+        })
+        .on('drag', function(event, d) {
+            const newX = event.x;
+            const newY = event.y;
+
+            d3.select(this).attr('transform', `translate(${newX}, ${newY})`);
+            
+            if (self.currentLayout && self.currentLayout.tables) {
+                const table = self.currentLayout.tables.find(t => t.name === d.name);
+                if (table) {
+                    table.x = newX;
+                    table.y = newY;
                 }
-                
-                // Store initial position
-                d._currentX = startX;
-                d._currentY = startY;
-                
-                // Debug logging with toggle
-                if (window.ERD_DEBUG_ENABLED) {
-                    console.log(`🚀 DRAG START [ZOOM-COMPENSATED] - Table: ${d.name}`);
-                    console.log(`   Table Position: (${startX}, ${startY})`);
-                }
-                
-                // Add dragging class
-                tableGroup.classed('dragging', true);
-                
-                if (self.eventBus) {
-                    self.eventBus.emit('table:drag-start', d);
-                }
-            })
-            .on('drag', function(event, d) {
-                // Get the current zoom transform to check if it's affecting deltas
-                const svg = d3.select(self.container).select('svg');
-                const mainGroup = svg.select('.main-group');
-                let zoomTransform = d3.zoomTransform(mainGroup.node());
-                if (!zoomTransform) {
-                    zoomTransform = d3.zoomIdentity;
-                }
-                
-                // Compensate for zoom scaling on delta values
-                const scaledDx = event.dx / zoomTransform.k;
-                const scaledDy = event.dy / zoomTransform.k;
-                
-                d._currentX += scaledDx;
-                d._currentY += scaledDy;
-                
-                // Debug logging with toggle
-                if (window.ERD_DEBUG_ENABLED) {
-                    console.log(`🖱️ DRAG EVENT [ZOOM-COMPENSATED] - Table: ${d.name}`);
-                    console.log(`   Raw D3 Delta: (${event.dx}, ${event.dy})`);
-                    console.log(`   Zoom Scale: ${zoomTransform.k}`);
-                    console.log(`   Scaled Delta: (${scaledDx}, ${scaledDy})`);
-                    console.log(`   New Position: (${d._currentX}, ${d._currentY})`);
-                }
-                
-                // Update the table position
-                d3.select(this).attr('transform', `translate(${d._currentX}, ${d._currentY})`);
-                
-                // Update the layout data
-                if (self.currentLayout && self.currentLayout.tables) {
-                    const table = self.currentLayout.tables.find(t => t.name === d.name);
-                    if (table) {
-                        table.x = d._currentX;
-                        table.y = d._currentY;
-                    }
-                }
-                
-                // Update connections in real-time
-                self.updateConnectionsForTable(d.name, d._currentX, d._currentY);
-                
-                if (self.eventBus) {
-                    self.eventBus.emit('table:drag', { table: d, x: d._currentX, y: d._currentY });
-                }
-                
-            })
-            .on('end', function(event, d) {
-                // Debug logging with toggle
-                if (window.ERD_DEBUG_ENABLED) {
-                    console.log(`🏁 DRAG END [ZOOM-COMPENSATED] - Table: ${d.name}`);
-                    console.log(`   Final Transform: ${d3.select(this).attr('transform')}`);
-                }
-                
-                // Remove dragging class
-                d3.select(this).classed('dragging', false);
-                
-                // Clean up drag data
-                delete d._currentX;
-                delete d._currentY;
-                
-                if (self.eventBus) {
-                    const transform = d3.select(this).attr('transform');
-                    let x = 0, y = 0;
-                    if (transform) {
-                        const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
-                        if (match) {
-                            x = parseFloat(match[1]);
-                            y = parseFloat(match[2]);
-                        }
-                    }
-                    
-                    self.eventBus.emit('table:drag-end', {
-                        table: d,
-                        x: x,
-                        y: y
-                    });
-                }
-            });
+            }
+            
+            self.updateConnectionsForTable(d.name, newX, newY);
+        })
+        .on('end', function(event, d) {
+            d3.select(this).classed('dragging', false);
+            
+            // Click detection logic
+            const dx = event.x - event.subject.x;
+            const dy = event.y - event.subject.y;
+            if (Math.sqrt(dx * dx + dy * dy) < 5) {
+                self.onTableClick(event.sourceEvent, d);
+            }
+        });
+}
+
+    attachDebugListeners() {
+        console.log('%c[DEBUG] Attaching global event listeners.', 'color: orange; font-weight: bold;');
+
+        const logEventDetails = (prefix, event) => {
+            console.groupCollapsed(`${prefix} - Type: ${event.type}`);
+            console.log('Event Object:', event);
+            console.log(`Target:`, event.target);
+            console.log(`Current Target:`, event.currentTarget);
+            console.log(`Timestamp: ${event.timeStamp}`);
+            console.log(`Mouse Screen Coords (clientX/Y): (${event.clientX}, ${event.clientY})`);
+            console.log(`defaultPrevented: ${event.defaultPrevented}`);
+            console.groupEnd();
+        };
+
+        // Listen on the SVG element
+        this.svg.on('mousedown.debug touchstart.debug', (event) => {
+            logEventDetails('SVG Event', event);
+        });
+
+        // Listen on the tables group using event delegation
+        // This will catch events on any table
+        this.tablesGroup.on('mousedown.debug touchstart.debug', '.table-group', (event) => {
+            logEventDetails('Table Event', event);
+        });
+
+        // Listen on the window to catch anything that bubbles up
+        // or any other scripts interfering.
+        window.addEventListener('mousedown', (event) => {
+            // Only log if the target is within our SVG container
+            if (event.target && event.target.closest('svg')) {
+                logEventDetails('Window Event', event);
+            }
+        }, true); // Use capture phase to see the event first
     }
 
     /**
@@ -281,10 +250,10 @@ export class ERDRenderer {
                 return `translate(${pos.x}, ${pos.y})`;
             })
             .call(this.dragBehavior)
-            .on('click', (event, d) => {
-                event.stopPropagation();
-                this.onTableClick(event, d);
-            })
+            // .on('click', (event, d) => {
+            //     event.stopPropagation();
+            //     this.onTableClick(event, d);
+            // })
             .on('mouseenter', (event, d) => {
                 this.onTableMouseEnter(event, d);
             })
@@ -369,7 +338,7 @@ export class ERDRenderer {
         // Enhanced column background with FK styling
         const isFk = columnData.isForeignKey || this.isForeignKey(columnData);
         const bgClass = isFk ? 'table-row foreign-key-row' : 'table-row';
-        
+
         columnGroup.append('rect')
             .attr('class', bgClass)
             .attr('width', tableWidth)
@@ -404,8 +373,8 @@ export class ERDRenderer {
 
         // Column name with enhanced FK styling
         const nameX = (columnData.isPrimaryKey || columnData.isForeignKey ||
-                      this.isPrimaryKey(columnData) || this.isForeignKey(columnData)) ? 24 : 8;
-        
+            this.isPrimaryKey(columnData) || this.isForeignKey(columnData)) ? 24 : 8;
+
         columnGroup.append('text')
             .attr('class', `column-name ${this.getColumnClass(columnData)}`)
             .attr('x', nameX)
@@ -421,7 +390,7 @@ export class ERDRenderer {
                 .attr('width', 20)
                 .attr('height', 12)
                 .attr('rx', 2);
-                
+
             columnGroup.append('text')
                 .attr('class', 'fk-badge-text')
                 .attr('x', tableWidth - 55)
@@ -453,9 +422,9 @@ export class ERDRenderer {
      * @returns {boolean} True if primary key
      */
     isPrimaryKey(column) {
-        return column.isPrimaryKey || 
-               (column.constraints && column.constraints.some(c => 
-                   c.toUpperCase().includes('PRIMARY KEY')));
+        return column.isPrimaryKey ||
+            (column.constraints && column.constraints.some(c =>
+                c.toUpperCase().includes('PRIMARY KEY')));
     }
 
     /**
@@ -464,10 +433,10 @@ export class ERDRenderer {
      * @returns {boolean} True if foreign key
      */
     isForeignKey(column) {
-        return column.isForeignKey || 
-               (column.constraints && column.constraints.some(c => 
-                   c.toUpperCase().includes('FOREIGN KEY') || 
-                   c.toUpperCase().includes('REFERENCES')));
+        return column.isForeignKey ||
+            (column.constraints && column.constraints.some(c =>
+                c.toUpperCase().includes('FOREIGN KEY') ||
+                c.toUpperCase().includes('REFERENCES')));
     }
 
     /**
@@ -581,13 +550,13 @@ export class ERDRenderer {
     calculateConnectionPoint(tablePos, tableSize, targetPos, columnName) {
         const headerHeight = 40;
         const rowHeight = 24;
-        
+
         // Find the column position within the table
         const table = this.currentSchema.tables.find(t =>
             this.currentLayout.tables.find(lt => lt.name === t.name &&
                 (lt.x === tablePos.x && lt.y === tablePos.y))
         );
-        
+
         let columnY = tablePos.y + headerHeight;
         if (table && columnName) {
             const columnIndex = table.columns.findIndex(col => col.name === columnName);
@@ -632,7 +601,7 @@ export class ERDRenderer {
         const minDistance = 30; // Minimum distance for clean routing
         const dx = targetPoint.x - sourcePoint.x;
         const dy = targetPoint.y - sourcePoint.y;
-        
+
         // Determine if we need multi-segment routing
         if (Math.abs(dx) < minDistance * 2) {
             // Close tables - use extended routing to avoid overlap
@@ -642,7 +611,7 @@ export class ERDRenderer {
             const midX2 = targetPoint.side === 'left' ?
                 targetPoint.x - extension : targetPoint.x + extension;
             const midY = (sourcePoint.y + targetPoint.y) / 2;
-            
+
             return `M ${sourcePoint.x} ${sourcePoint.y}
                     L ${midX1} ${sourcePoint.y}
                     L ${midX1} ${midY}
@@ -652,7 +621,7 @@ export class ERDRenderer {
         } else {
             // Standard orthogonal routing
             const midX = (sourcePoint.x + targetPoint.x) / 2;
-            
+
             return `M ${sourcePoint.x} ${sourcePoint.y}
                     L ${midX} ${sourcePoint.y}
                     L ${midX} ${targetPoint.y}
@@ -669,15 +638,15 @@ export class ERDRenderer {
      */
     addRelationshipMarkers(connectionGroup, sourcePoint, targetPoint, relationshipData) {
         const relationshipType = relationshipData.type || 'one-to-many';
-        
+
         // Calculate angle for marker orientation
         const dx = targetPoint.x - sourcePoint.x;
         const dy = targetPoint.y - sourcePoint.y;
         const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-        
+
         // Add Crow's Foot notation markers
         this.addCrowsFootMarkers(connectionGroup, sourcePoint, targetPoint, relationshipType, angle);
-        
+
         // Add relationship type label (optional)
         if (relationshipData.showLabel !== false) {
             this.addRelationshipLabel(connectionGroup, sourcePoint, targetPoint, relationshipType);
@@ -694,10 +663,10 @@ export class ERDRenderer {
      */
     addCrowsFootMarkers(connectionGroup, sourcePoint, targetPoint, relationshipType, angle) {
         const markerSize = 8;
-        
+
         // Determine cardinality for source and target
         const cardinality = this.parseRelationshipCardinality(relationshipType);
-        
+
         // Add source marker (near source table)
         this.addCardinalityMarker(
             connectionGroup,
@@ -706,7 +675,7 @@ export class ERDRenderer {
             angle + 180, // Reverse angle for source
             'source-marker'
         );
-        
+
         // Add target marker (near target table)
         this.addCardinalityMarker(
             connectionGroup,
@@ -731,7 +700,7 @@ export class ERDRenderer {
             'zero-or-one': { source: 'zero-or-one', target: 'one' },
             'zero-or-many': { source: 'zero-or-many', target: 'one' }
         };
-        
+
         return cardinalityMap[relationshipType] || { source: 'one', target: 'many' };
     }
 
@@ -757,43 +726,43 @@ export class ERDRenderer {
                 markerGroup.append('line')
                     .attr('class', 'cardinality-line')
                     .attr('x1', -offset)
-                    .attr('y1', -size/2)
+                    .attr('y1', -size / 2)
                     .attr('x2', -offset)
-                    .attr('y2', size/2);
+                    .attr('y2', size / 2);
                 break;
-                
+
             case 'many':
                 // Crow's foot <
                 markerGroup.append('path')
                     .attr('class', 'cardinality-crowfoot')
-                    .attr('d', `M ${-offset} 0 L ${-offset - size} ${-size/2} M ${-offset} 0 L ${-offset - size} ${size/2}`);
+                    .attr('d', `M ${-offset} 0 L ${-offset - size} ${-size / 2} M ${-offset} 0 L ${-offset - size} ${size / 2}`);
                 break;
-                
+
             case 'zero-or-one':
                 // Circle and line O|
                 markerGroup.append('circle')
                     .attr('class', 'cardinality-circle')
                     .attr('cx', -offset - size)
                     .attr('cy', 0)
-                    .attr('r', size/3);
+                    .attr('r', size / 3);
                 markerGroup.append('line')
                     .attr('class', 'cardinality-line')
                     .attr('x1', -offset)
-                    .attr('y1', -size/2)
+                    .attr('y1', -size / 2)
                     .attr('x2', -offset)
-                    .attr('y2', size/2);
+                    .attr('y2', size / 2);
                 break;
-                
+
             case 'zero-or-many':
                 // Circle and crow's foot O<
                 markerGroup.append('circle')
                     .attr('class', 'cardinality-circle')
                     .attr('cx', -offset - size)
                     .attr('cy', 0)
-                    .attr('r', size/3);
+                    .attr('r', size / 3);
                 markerGroup.append('path')
                     .attr('class', 'cardinality-crowfoot')
-                    .attr('d', `M ${-offset} 0 L ${-offset - size/2} ${-size/3} M ${-offset} 0 L ${-offset - size/2} ${size/3}`);
+                    .attr('d', `M ${-offset} 0 L ${-offset - size / 2} ${-size / 3} M ${-offset} 0 L ${-offset - size / 2} ${size / 3}`);
                 break;
         }
     }
@@ -808,23 +777,23 @@ export class ERDRenderer {
     addRelationshipLabel(group, sourcePoint, targetPoint, relationshipType) {
         const midX = (sourcePoint.x + targetPoint.x) / 2;
         const midY = (sourcePoint.y + targetPoint.y) / 2;
-        
+
         const labelGroup = group.append('g')
             .attr('class', 'relationship-label-group')
             .attr('transform', `translate(${midX}, ${midY})`);
-            
+
         // Background for better readability
         const label = this.formatRelationshipType(relationshipType);
         const bbox = this.measureText(label, '10px');
-        
+
         labelGroup.append('rect')
             .attr('class', 'relationship-label-bg')
-            .attr('x', -bbox.width/2 - 3)
-            .attr('y', -bbox.height/2 - 1)
+            .attr('x', -bbox.width / 2 - 3)
+            .attr('y', -bbox.height / 2 - 1)
             .attr('width', bbox.width + 6)
             .attr('height', bbox.height + 2)
             .attr('rx', 2);
-            
+
         labelGroup.append('text')
             .attr('class', 'relationship-label')
             .attr('text-anchor', 'middle')
@@ -880,8 +849,8 @@ export class ERDRenderer {
      */
     getTableSize(tableName, layout) {
         const tableLayout = layout.tables?.find(t => t.name === tableName);
-        return tableLayout ? 
-            { width: tableLayout.width, height: tableLayout.height } : 
+        return tableLayout ?
+            { width: tableLayout.width, height: tableLayout.height } :
             { width: 200, height: 100 };
     }
 
@@ -895,7 +864,7 @@ export class ERDRenderer {
         const d3 = this.d3;
         // Select the element that has the drag behavior attached
         d3.select(element).classed('dragging', true);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('table:drag-start', data);
         }
@@ -912,7 +881,7 @@ export class ERDRenderer {
         // Update the transform of the current table group being dragged
         d3.select(element)
             .attr('transform', `translate(${event.x}, ${event.y})`);
-        
+
         // Update the layout data
         if (this.currentLayout && this.currentLayout.tables) {
             const table = this.currentLayout.tables.find(t => t.name === data.name);
@@ -921,10 +890,10 @@ export class ERDRenderer {
                 table.y = event.y;
             }
         }
-        
+
         // Update connections in real-time
         this.updateConnectionsForTable(data.name, event.x, event.y);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('table:drag', { table: data, x: event.x, y: event.y });
         }
@@ -940,7 +909,7 @@ export class ERDRenderer {
         const d3 = this.d3;
         // Select the element that has the drag behavior attached
         d3.select(element).classed('dragging', false);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('table:drag-end', { table: data, x: event.x, y: event.y });
         }
@@ -975,12 +944,12 @@ export class ERDRenderer {
     onTableClick(event, data) {
         // Clear previous selection
         this.tablesGroup.selectAll('.erd-table').classed('selected', false);
-        
+
         // Select clicked table
         const d3 = this.d3;
         d3.select(event.currentTarget).classed('selected', true);
         this.selectedTable = data;
-        
+
         if (this.eventBus) {
             this.eventBus.emit('table:selected', data);
             this.eventBus.emit('table:click', data); // For Properties Panel
@@ -995,12 +964,12 @@ export class ERDRenderer {
     onColumnClick(event, data) {
         // Clear previous column selection
         this.tablesGroup.selectAll('.column-group').classed('selected', false);
-        
+
         // Select clicked column
         const d3 = this.d3;
         d3.select(event.currentTarget).classed('selected', true);
         this.selectedColumn = data;
-        
+
         if (this.eventBus) {
             this.eventBus.emit('column:selected', data);
             this.eventBus.emit('column:click', data); // For Properties Panel
@@ -1016,10 +985,10 @@ export class ERDRenderer {
         const d3 = this.d3;
         d3.select(event.currentTarget).classed('hover', true);
         this.hoveredTable = data;
-        
+
         // Highlight related connections
         this.highlightRelatedConnections(data.name);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('table:hover', data);
         }
@@ -1034,10 +1003,10 @@ export class ERDRenderer {
         const d3 = this.d3;
         d3.select(event.currentTarget).classed('hover', false);
         this.hoveredTable = null;
-        
+
         // Remove connection highlights
         this.connectionsGroup.selectAll('.connection-line').classed('highlighted', false);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('table:hover-end', data);
         }
@@ -1050,18 +1019,18 @@ export class ERDRenderer {
      */
     onConnectionMouseEnter(event, data) {
         const d3 = this.d3;
-        
+
         // Highlight the connection line
         const connectionGroup = d3.select(event.currentTarget.parentNode);
         connectionGroup.select('.connection-line').classed('highlighted', true);
         connectionGroup.select('.connection-marker').classed('highlighted', true);
-        
+
         // Highlight connected columns in both tables
         this.highlightConnectedColumns(data, true);
-        
+
         // Show enhanced tooltip
         this.showConnectionTooltip(event, data);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('connection:hover', data);
         }
@@ -1074,18 +1043,18 @@ export class ERDRenderer {
      */
     onConnectionMouseLeave(event, data) {
         const d3 = this.d3;
-        
+
         // Remove connection highlighting
         const connectionGroup = d3.select(event.currentTarget.parentNode);
         connectionGroup.select('.connection-line').classed('highlighted', false);
         connectionGroup.select('.connection-marker').classed('highlighted', false);
-        
+
         // Remove column highlighting
         this.highlightConnectedColumns(data, false);
-        
+
         // Hide tooltip
         this.hideTooltip();
-        
+
         if (this.eventBus) {
             this.eventBus.emit('connection:hover-end', data);
         }
@@ -1099,7 +1068,7 @@ export class ERDRenderer {
     onConnectionClick(event, data) {
         // Future: Open relationship editor or show detailed info
         console.log('Connection clicked:', data);
-        
+
         if (this.eventBus) {
             this.eventBus.emit('connection:click', data);
         }
@@ -1112,14 +1081,14 @@ export class ERDRenderer {
      */
     highlightConnectedColumns(relationshipData, highlight) {
         const d3 = this.d3;
-        
+
         // Find and highlight source column
         this.tablesGroup.selectAll('.table-group')
             .filter(d => d.name === relationshipData.sourceTable)
             .selectAll('.column-group')
             .filter(d => d.name === relationshipData.sourceColumn)
             .classed('highlight-column', highlight);
-            
+
         // Find and highlight target column
         this.tablesGroup.selectAll('.table-group')
             .filter(d => d.name === relationshipData.targetTable)
@@ -1153,7 +1122,7 @@ export class ERDRenderer {
      */
     highlightRelatedConnections(tableName) {
         this.connectionsGroup.selectAll('.connection-line')
-            .classed('highlighted', function(d) {
+            .classed('highlighted', function (d) {
                 return d.sourceTable === tableName || d.targetTable === tableName;
             });
     }
@@ -1201,10 +1170,10 @@ export class ERDRenderer {
         }
 
         const tables = this.currentLayout.tables;
-        
+
         // Calculate bounds
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        
+
         tables.forEach(table => {
             minX = Math.min(minX, table.x);
             minY = Math.min(minY, table.y);
@@ -1305,7 +1274,7 @@ export class ERDRenderer {
         if (this.svg) {
             this.svg.remove();
         }
-        
+
         this.svg = null;
         this.mainGroup = null;
         this.tablesGroup = null;
