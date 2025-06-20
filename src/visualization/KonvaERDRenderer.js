@@ -44,7 +44,7 @@ export class KonvaERDRenderer {
                 border: '#e2e8f0',
                 borderWidth: 1,
                 cornerRadius: 4,
-                headerBackground: '#f8fafc',
+                headerBackground: '#cce5ff',
                 headerHeight: 30,
                 rowHeight: 25,
                 padding: 8
@@ -498,44 +498,31 @@ export class KonvaERDRenderer {
     }
 
     /**
-     * Setup table interaction events
+     * Format column type for display
+     * @param {string} type - Column type
+     * @returns {string} Formatted type
+     */
+    formatColumnType(type) {
+        return type.toUpperCase();
+    }
+
+    /**
+     * Setup table interactions
      * @param {Konva.Group} tableGroup - Table group
      * @param {Object} tableData - Table data
      */
     setupTableInteractions(tableGroup, tableData) {
-        // Click event
-        tableGroup.on('click tap', (e) => {
-            e.cancelBubble = true;
-            this.onTableClick(e, tableData);
-        });
+        tableGroup.on('click tap', (e) => this.onTableClick(e, tableData));
+        tableGroup.on('mouseenter', (e) => this.onTableMouseEnter(e, tableData));
+        tableGroup.on('mouseleave', (e) => this.onTableMouseLeave(e, tableData));
 
-        // Hover events
-        tableGroup.on('mouseenter', (e) => {
-            this.onTableMouseEnter(e, tableData);
-            this.stage.container().style.cursor = 'move';
-        });
-
-        tableGroup.on('mouseleave', (e) => {
-            this.onTableMouseLeave(e, tableData);
-            this.stage.container().style.cursor = 'default';
-        });
-
-        // Drag events
-        tableGroup.on('dragstart', (e) => {
-            this.onDragStart(e, tableData, tableGroup);
-        });
-
-        tableGroup.on('dragmove', (e) => {
-            this.onDrag(e, tableData, tableGroup);
-        });
-
-        tableGroup.on('dragend', (e) => {
-            this.onDragEnd(e, tableData, tableGroup);
-        });
+        tableGroup.on('dragstart', (e) => this.onDragStart(e, tableData, tableGroup));
+        tableGroup.on('dragmove', (e) => this.onDrag(e, tableData, tableGroup));
+        tableGroup.on('dragend', (e) => this.onDragEnd(e, tableData, tableGroup));
     }
 
     /**
-     * Setup column interaction events
+     * Setup column interactions
      * @param {Konva.Rect} columnBackground - Column background shape
      * @param {Object} column - Column data
      * @param {Object} tableData - Table data
@@ -545,406 +532,353 @@ export class KonvaERDRenderer {
             e.cancelBubble = true;
             this.onColumnClick(e, column, tableData);
         });
-
-        columnBackground.on('mouseenter', () => {
-            columnBackground.fill('#f1f5f9');
-            this.tablesLayer.draw();
-        });
-
-        columnBackground.on('mouseleave', () => {
-            columnBackground.fill('transparent');
-            this.tablesLayer.draw();
-        });
     }
 
     /**
-     * Check if column is primary key
+     * Check if a column is a primary key
      * @param {Object} column - Column data
-     * @returns {boolean} True if primary key
+     * @returns {boolean}
      */
     isPrimaryKey(column) {
-        return column.isPrimaryKey ||
-            (column.constraints && column.constraints.some(c =>
-                c.toUpperCase().includes('PRIMARY KEY')));
+        // This is a simplified check. A more robust implementation might
+        // rely on explicit flags in the schema data.
+        return column.isPrimaryKey || column.name.toLowerCase().includes('id');
     }
 
     /**
-     * Check if column is foreign key
+     * Check if a column is a foreign key
      * @param {Object} column - Column data
-     * @returns {boolean} True if foreign key
+     * @returns {boolean}
      */
     isForeignKey(column) {
-        return column.isForeignKey ||
-            (column.constraints && column.constraints.some(c =>
-                c.toUpperCase().includes('FOREIGN KEY') ||
-                c.toUpperCase().includes('REFERENCES')));
+        // This is a simplified check. A more robust implementation might
+        // rely on explicit flags in the schema data.
+        return column.isForeignKey || column.name.toLowerCase().includes('_id');
     }
 
     /**
-     * Format column type for display
-     * @param {string} type - Column type
-     * @returns {string} Formatted type
-     */
-    formatColumnType(type) {
-        return type.length > 15 ? type.substring(0, 12) + '...' : type;
-    }
-
-    /**
-     * Render connections between tables
+     * Render connections
      * @param {Array} relationships - Relationship data
      * @param {Object} layout - Layout data
      */
     renderConnections(relationships, layout) {
-        relationships.forEach((relationship, index) => {
-            const connectionLine = this.createConnectionLine(relationship, layout);
-            if (connectionLine) {
-                // Use normalized property names for the key
-                const fromTable = relationship.fromTable || relationship.sourceTable;
-                const toTable = relationship.toTable || relationship.targetTable;
-                
-                this.connectionsLayer.add(connectionLine);
-                this.connectionLines.set(`${fromTable}-${toTable}`, connectionLine);
+        relationships.forEach(relationship => {
+            const connectionGroup = this.createConnectionLine(relationship, layout);
+            if (connectionGroup) {
+                this.connectionsLayer.add(connectionGroup);
+                // Use a unique key for each relationship
+                const fromTable = relationship.from ? relationship.from.table : relationship.sourceTable;
+                const fromColumn = relationship.from ? relationship.from.column : relationship.sourceColumn;
+                const toTable = relationship.to ? relationship.to.table : relationship.targetTable;
+                const toColumn = relationship.to ? relationship.to.column : relationship.targetColumn;
+                const connectionKey = `${fromTable}-${fromColumn}-${toTable}-${toColumn}`;
+                this.connectionLines.set(connectionKey, connectionGroup);
             }
         });
-
         this.connectionsLayer.draw();
     }
 
     /**
-     * Create a connection line between tables
+     * Create a connection line
      * @param {Object} relationship - Relationship data
      * @param {Object} layout - Layout data
      * @returns {Konva.Group} Connection group
      */
     createConnectionLine(relationship, layout) {
-        // Handle different property names for relationships
-        const fromTable = relationship.fromTable || relationship.sourceTable;
-        const toTable = relationship.toTable || relationship.targetTable;
-        const fromColumn = relationship.fromColumn || relationship.sourceColumn;
-        const toColumn = relationship.toColumn || relationship.targetColumn;
+        const fromTableName = relationship.from ? relationship.from.table : relationship.sourceTable;
+        const toTableName = relationship.to ? relationship.to.table : relationship.targetTable;
+        const fromColumnName = relationship.from ? relationship.from.column : relationship.sourceColumn;
+        const toColumnName = relationship.to ? relationship.to.column : relationship.targetColumn;
 
-        const fromPos = this.getTablePosition(fromTable, layout);
-        const toPos = this.getTablePosition(toTable, layout);
-        const fromSize = this.getTableSize(fromTable, layout);
-        const toSize = this.getTableSize(toTable, layout);
+        const fromTable = this.currentSchema.tables.find(t => t.name === fromTableName);
+        const toTable = this.currentSchema.tables.find(t => t.name === toTableName);
 
-        if (!fromPos || !toPos) {
+        if (!fromTable || !toTable) {
+            console.warn('Could not find tables for relationship:', relationship);
             return null;
         }
 
-        // Get table data for column-based connections
-        const fromTableData = this.currentSchema.tables.find(t => t.name === fromTable);
-        const toTableData = this.currentSchema.tables.find(t => t.name === toTable);
+        const pathPoints = this.calculateOrthogonalPath(relationship, layout);
 
-        // Calculate connection points with orthogonal routing
-        const connectionPoints = this.calculateConnectionPoints(
-            fromPos, fromSize, toPos, toSize, fromColumn, toColumn, fromTableData, toTableData
-        );
+        if (!pathPoints || pathPoints.length === 0) {
+            return null;
+        }
 
-        console.log('Connection points:', connectionPoints);
-        console.log('Orthogonal path:', connectionPoints.orthogonalPath);
-
-        // Create connection group
         const connectionGroup = new Konva.Group({
-            name: 'connection-group'
+            name: 'connection-group',
+            draggable: false
         });
 
-        // Store relationship data with normalized properties
+        // Store relationship data
         connectionGroup.relationshipData = {
-            ...relationship,
-            fromTable,
-            toTable,
-            fromColumn,
-            toColumn,
-            fromTableData,
-            toTableData
+            fromTable: fromTable.name,
+            fromColumn: fromColumnName,
+            toTable: toTable.name,
+            toColumn: toColumnName,
+            type: relationship.type
         };
 
-        // Create orthogonal connection line using the generated path
+        // Line
         const line = new Konva.Line({
-            points: connectionPoints.orthogonalPath,
+            points: pathPoints,
             stroke: this.styles.connection.stroke,
             strokeWidth: this.styles.connection.strokeWidth,
-            lineCap: 'round',
-            lineJoin: 'round',
             name: 'connection-line'
         });
 
         connectionGroup.add(line);
 
-        // Add relationship markers
-        this.addRelationshipMarkers(connectionGroup, connectionPoints, relationship);
+        // Add markers
+        this.addRelationshipMarkers(connectionGroup, { source: { x: pathPoints[0], y: pathPoints[1] }, target: { x: pathPoints[pathPoints.length - 2], y: pathPoints[pathPoints.length - 1] } }, relationship);
 
-        // Setup connection interactions
+        // Setup interactions
         this.setupConnectionInteractions(connectionGroup, relationship);
 
         return connectionGroup;
     }
 
     /**
-     * Calculate connection points between tables based on specific columns
+     * Calculate connection points between two tables
      * @param {Object} fromPos - From table position
      * @param {Object} fromSize - From table size
      * @param {Object} toPos - To table position
      * @param {Object} toSize - To table size
-     * @param {string} fromColumn - Source column name
-     * @param {string} toColumn - Target column name
-     * @param {Object} fromTable - Source table data
-     * @param {Object} toTable - Target table data
-     * @returns {Object} Connection points with orthogonal routing
+     * @param {string} fromColumn - From column name
+     * @param {string} toColumn - To column name
+     * @param {Object} fromTable - From table data
+     * @param {Object} toTable - To table data
+     * @returns {Object} Source and target points
      */
     calculateConnectionPoints(fromPos, fromSize, toPos, toSize, fromColumn, toColumn, fromTable, toTable) {
-        // Calculate column-specific connection points
-        const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumn, fromTable, 'source');
-        const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumn, toTable, 'target');
-        
-        // Determine which side of each table to connect to based on shortest distance
-        const optimizedPoints = this.optimizeConnectionSides(fromPos, fromSize, toPos, toSize, sourcePoint, targetPoint);
-        
-        // Generate orthogonal path
-        const orthogonalPath = this.generateOrthogonalPath(optimizedPoints.source, optimizedPoints.target);
-        
+        // Simplified: connect table centers
+        const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumn, fromTable, 'right');
+        const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumn, toTable, 'left');
+
         return {
-            source: optimizedPoints.source,
-            target: optimizedPoints.target,
-            orthogonalPath: orthogonalPath
+            source: sourcePoint,
+            target: targetPoint
         };
     }
 
     /**
-     * Get connection point for a specific column
+     * Get the connection point for a specific column
+     * @param {Object} tablePos - Table position
+     * @param {Object} tableSize - Table size
+     * @param {string} columnName - Column name
+     * @param {Object} tableData - Table data
+     * @param {string} type - 'left' or 'right'
+     * @returns {Object} Point with x and y
      */
     getColumnConnectionPoint(tablePos, tableSize, columnName, tableData, type) {
-        const headerHeight = this.styles.table.headerHeight;
-        const rowHeight = this.styles.table.rowHeight;
-        
-        // Find column index
-        let columnIndex = -1;
-        if (tableData && tableData.columns) {
-            columnIndex = tableData.columns.findIndex(col => col.name === columnName);
-        }
-        
-        if (columnIndex === -1) {
-            // Fallback to table center if column not found
+        const columnIndex = tableData.columns.findIndex(c => c.name === columnName);
+        const y = tablePos.y + this.styles.table.headerHeight + (columnIndex * this.styles.table.rowHeight) + (this.styles.table.rowHeight / 2);
+
+        if (type === 'left') {
             return {
-                x: tablePos.x + tableSize.width / 2,
-                y: tablePos.y + tableSize.height / 2,
-                columnIndex: -1
+                x: tablePos.x,
+                y: y
+            };
+        } else { // right
+            return {
+                x: tablePos.x + tableSize.width,
+                y: y
             };
         }
-        
-        // Calculate Y position for the specific column
-        const columnY = tablePos.y + headerHeight + (columnIndex * rowHeight) + (rowHeight / 2);
-        
-        return {
-            x: tablePos.x + tableSize.width / 2, // Will be adjusted in optimizeConnectionSides
-            y: columnY,
-            columnIndex: columnIndex
-        };
     }
 
     /**
-     * Optimize connection sides based on shortest distance
+     * Optimize connection sides to minimize line length and crossings
+     * @param {Object} fromPos - From table position
+     * @param {Object} fromSize - From table size
+     * @param {Object} toPos - To table position
+     * @param {Object} toSize - To table size
+     * @param {Object} sourcePoint - Original source point
+     * @param {Object} targetPoint - Original target point
+     * @returns {Object} Optimized source and target points
      */
     optimizeConnectionSides(fromPos, fromSize, toPos, toSize, sourcePoint, targetPoint) {
-        // Calculate potential connection points on all four sides of each table
         const fromSides = {
             left: { x: fromPos.x, y: sourcePoint.y },
-            right: { x: fromPos.x + fromSize.width, y: sourcePoint.y },
-            top: { x: fromPos.x + fromSize.width / 2, y: fromPos.y },
-            bottom: { x: fromPos.x + fromSize.width / 2, y: fromPos.y + fromSize.height }
+            right: { x: fromPos.x + fromSize.width, y: sourcePoint.y }
         };
-        
         const toSides = {
             left: { x: toPos.x, y: targetPoint.y },
-            right: { x: toPos.x + toSize.width, y: targetPoint.y },
-            top: { x: toPos.x + toSize.width / 2, y: toPos.y },
-            bottom: { x: toPos.x + toSize.width / 2, y: toPos.y + toSize.height }
+            right: { x: toPos.x + toSize.width, y: targetPoint.y }
         };
-        
-        // Find the combination with shortest distance
-        let shortestDistance = Infinity;
-        let bestFromSide = 'right';
-        let bestToSide = 'left';
-        
-        for (const [fromSideName, fromSidePoint] of Object.entries(fromSides)) {
-            for (const [toSideName, toSidePoint] of Object.entries(toSides)) {
-                // Skip same-side connections for better routing
-                if ((fromSideName === 'left' && toSideName === 'right') ||
-                    (fromSideName === 'right' && toSideName === 'left') ||
-                    (fromSideName === 'top' && toSideName === 'bottom') ||
-                    (fromSideName === 'bottom' && toSideName === 'top')) {
-                    
-                    const distance = Math.sqrt(
-                        Math.pow(toSidePoint.x - fromSidePoint.x, 2) +
-                        Math.pow(toSidePoint.y - fromSidePoint.y, 2)
-                    );
-                    
-                    if (distance < shortestDistance) {
-                        shortestDistance = distance;
-                        bestFromSide = fromSideName;
-                        bestToSide = toSideName;
-                    }
-                }
+
+        let bestSource = fromSides.right;
+        let bestTarget = toSides.left;
+        let minDistance = this.getDistance(bestSource, bestTarget);
+
+        // Check all 4 combinations
+        const combinations = [
+            { source: fromSides.right, target: toSides.left },
+            { source: fromSides.left, target: toSides.right },
+            { source: fromSides.right, target: toSides.right },
+            { source: fromSides.left, target: toSides.left }
+        ];
+
+        combinations.forEach(combo => {
+            const distance = this.getDistance(combo.source, combo.target);
+            if (distance < minDistance) {
+                minDistance = distance;
+                bestSource = combo.source;
+                bestTarget = combo.target;
             }
-        }
-        
+        });
+
         return {
-            source: { ...fromSides[bestFromSide], side: bestFromSide, columnIndex: sourcePoint.columnIndex },
-            target: { ...toSides[bestToSide], side: bestToSide, columnIndex: targetPoint.columnIndex }
+            source: bestSource,
+            target: bestTarget
         };
     }
 
     /**
-     * Generate orthogonal path with only horizontal and vertical lines
+     * Generate orthogonal path points
+     * @param {Object} sourcePoint - Source point
+     * @param {Object} targetPoint - Target point
+     * @returns {Array} Array of points [x1, y1, x2, y2, ...]
      */
-    generateOrthogonalPath(sourcePoint, targetPoint) {
-        const points = [sourcePoint.x, sourcePoint.y];
-        
-        const spacing = 30; // Minimum spacing for elbow connections
-        
-        // Determine routing based on connection sides
-        if (sourcePoint.side === 'right' && targetPoint.side === 'left') {
-            // Right to left connection
-            const midX = sourcePoint.x + Math.max(spacing, (targetPoint.x - sourcePoint.x) / 2);
-            points.push(midX, sourcePoint.y);      // Horizontal line from source
-            points.push(midX, targetPoint.y);      // Vertical line
-            points.push(targetPoint.x, targetPoint.y); // Horizontal line to target
+    calculateOrthogonalPath(relationship, layout) {
+        const fromTableName = relationship.from ? relationship.from.table : relationship.fromTable;
+        const toTableName = relationship.to ? relationship.to.table : relationship.toTable;
+        const fromColumnName = relationship.from ? relationship.from.column : relationship.fromColumn;
+        const toColumnName = relationship.to ? relationship.to.column : relationship.toColumn;
+
+        const fromTable = this.currentSchema.tables.find(t => t.name === fromTableName);
+        const toTable = this.currentSchema.tables.find(t => t.name === toTableName);
+
+        if (!fromTable || !toTable) {
+            console.warn('Could not find tables for relationship:', relationship);
+            return [];
         }
-        else if (sourcePoint.side === 'left' && targetPoint.side === 'right') {
-            // Left to right connection
-            const midX = sourcePoint.x - Math.max(spacing, (sourcePoint.x - targetPoint.x) / 2);
-            points.push(midX, sourcePoint.y);      // Horizontal line from source
-            points.push(midX, targetPoint.y);      // Vertical line
-            points.push(targetPoint.x, targetPoint.y); // Horizontal line to target
-        }
-        else if (sourcePoint.side === 'bottom' && targetPoint.side === 'top') {
-            // Bottom to top connection
-            const midY = sourcePoint.y + Math.max(spacing, (targetPoint.y - sourcePoint.y) / 2);
-            points.push(sourcePoint.x, midY);      // Vertical line from source
-            points.push(targetPoint.x, midY);      // Horizontal line
-            points.push(targetPoint.x, targetPoint.y); // Vertical line to target
-        }
-        else if (sourcePoint.side === 'top' && targetPoint.side === 'bottom') {
-            // Top to bottom connection
-            const midY = sourcePoint.y - Math.max(spacing, (sourcePoint.y - targetPoint.y) / 2);
-            points.push(sourcePoint.x, midY);      // Vertical line from source
-            points.push(targetPoint.x, midY);      // Horizontal line
-            points.push(targetPoint.x, targetPoint.y); // Vertical line to target
-        }
-        else {
-            // Default L-shaped routing for other combinations
-            if (Math.abs(targetPoint.x - sourcePoint.x) > Math.abs(targetPoint.y - sourcePoint.y)) {
-                // Horizontal first, then vertical
-                points.push(targetPoint.x, sourcePoint.y);
-                points.push(targetPoint.x, targetPoint.y);
+
+
+        const fromPos = this.getTablePosition(fromTable.name, layout);
+        const fromSize = this.getTableSize(fromTable.name, layout);
+        const toPos = this.getTablePosition(toTable.name, layout);
+        const toSize = this.getTableSize(toTable.name, layout);
+
+        // Determine connection sides
+        const fromRight = fromPos.x + fromSize.width;
+        const toRight = toPos.x + toSize.width;
+
+        let fromSide, toSide;
+        if (fromRight < toPos.x) {
+            // fromTable is to the left of toTable
+            fromSide = 'right';
+            toSide = 'left';
+        } else if (toRight < fromPos.x) {
+            // toTable is to the left of fromTable
+            fromSide = 'left';
+            toSide = 'right';
+        } else {
+            // Tables are vertically aligned or overlapping
+            if (fromPos.x < toPos.x) {
+                fromSide = 'right';
+                toSide = 'left';
             } else {
-                // Vertical first, then horizontal
-                points.push(sourcePoint.x, targetPoint.y);
-                points.push(targetPoint.x, targetPoint.y);
+                fromSide = 'left';
+                toSide = 'right';
             }
         }
-        
+
+        const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTable, fromSide);
+        const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTable, toSide);
+
+        const points = [];
+        points.push(sourcePoint.x, sourcePoint.y);
+
+        const midX = sourcePoint.x + (targetPoint.x - sourcePoint.x) / 2;
+
+        points.push(midX, sourcePoint.y);
+        points.push(midX, targetPoint.y);
+
+        points.push(targetPoint.x, targetPoint.y);
+
         return points;
     }
 
+
     /**
-     * Add relationship markers (arrows, etc.)
+     * Add relationship markers (e.g., arrows)
      * @param {Konva.Group} connectionGroup - Connection group
-     * @param {Object} connectionPoints - Connection points
+     * @param {Object} connectionPoints - Source and target points
      * @param {Object} relationship - Relationship data
      */
     addRelationshipMarkers(connectionGroup, connectionPoints, relationship) {
-        // Calculate arrow angle
         const dx = connectionPoints.target.x - connectionPoints.source.x;
         const dy = connectionPoints.target.y - connectionPoints.source.y;
         const angle = Math.atan2(dy, dx);
 
-        // Create arrow marker
         const arrowLength = 10;
-        const arrowAngle = Math.PI / 6; // 30 degrees
+        const arrowAngle = Math.PI / 6;
 
         const arrowPoints = [
-            connectionPoints.target.x,
-            connectionPoints.target.y,
-            connectionPoints.target.x - arrowLength * Math.cos(angle - arrowAngle),
-            connectionPoints.target.y - arrowLength * Math.sin(angle - arrowAngle),
-            connectionPoints.target.x - arrowLength * Math.cos(angle + arrowAngle),
-            connectionPoints.target.y - arrowLength * Math.sin(angle + arrowAngle)
+            0, 0,
+            -arrowLength, -arrowAngle,
+            -arrowLength, arrowAngle
         ];
 
         const arrow = new Konva.Line({
             points: arrowPoints,
-            fill: this.styles.connection.stroke,
             stroke: this.styles.connection.stroke,
             strokeWidth: this.styles.connection.strokeWidth,
             closed: true,
+            fill: this.styles.connection.stroke,
             name: 'arrow-marker'
         });
+
+        arrow.position({ x: connectionPoints.target.x, y: connectionPoints.target.y });
+        arrow.rotation(angle * 180 / Math.PI);
 
         connectionGroup.add(arrow);
     }
 
     /**
-     * Setup connection interaction events
+     * Setup connection interactions
      * @param {Konva.Group} connectionGroup - Connection group
      * @param {Object} relationship - Relationship data
      */
     setupConnectionInteractions(connectionGroup, relationship) {
-        connectionGroup.on('click tap', (e) => {
-            e.cancelBubble = true;
-            this.onConnectionClick(e, relationship);
-        });
-
-        connectionGroup.on('mouseenter', (e) => {
-            this.onConnectionMouseEnter(e, relationship);
-            this.stage.container().style.cursor = 'pointer';
-        });
-
-        connectionGroup.on('mouseleave', (e) => {
-            this.onConnectionMouseLeave(e, relationship);
-            this.stage.container().style.cursor = 'default';
-        });
+        connectionGroup.on('click tap', (e) => this.onConnectionClick(e, relationship));
+        connectionGroup.on('mouseenter', (e) => this.onConnectionMouseEnter(e, relationship));
+        connectionGroup.on('mouseleave', (e) => this.onConnectionMouseLeave(e, relationship));
     }
 
     /**
-     * Get table position from layout
+     * Get table position from layout data
      * @param {string} tableName - Table name
      * @param {Object} layout - Layout data
-     * @returns {Object} Position {x, y}
+     * @returns {Object} Position with x and y
      */
     getTablePosition(tableName, layout) {
-        if (layout && layout.tables) {
-            const table = layout.tables.find(t => t.name === tableName);
-            if (table) {
-                return { x: table.x || 0, y: table.y || 0 };
-            }
-        }
-        return { x: 100, y: 100 }; // Default position
+        if (!layout || !layout.tables) return { x: 0, y: 0 };
+        const tableLayout = layout.tables.find(t => t.name === tableName);
+        return tableLayout ? { x: tableLayout.x, y: tableLayout.y } : { x: 0, y: 0 };
     }
 
     /**
-     * Get table size from layout
+     * Get table size from layout data
      * @param {string} tableName - Table name
      * @param {Object} layout - Layout data
-     * @returns {Object} Size {width, height}
+     * @returns {Object} Size with width and height
      */
     getTableSize(tableName, layout) {
         if (layout && layout.tables) {
-            const table = layout.tables.find(t => t.name === tableName);
-            if (table) {
+            const tableLayout = layout.tables.find(t => t.name === tableName);
+            if (tableLayout && tableLayout.width && tableLayout.height) {
                 return {
-                    width: table.width || 200,
-                    height: table.height || 150
+                    width: tableLayout.width,
+                    height: tableLayout.height
                 };
             }
         }
-        return { width: 200, height: 150 }; // Default size
+        // Fallback to calculating size based on content if not in layout
+        const tableData = this.currentSchema.tables.find(t => t.name === tableName);
+        const height = this.styles.table.headerHeight + (tableData.columns.length * this.styles.table.rowHeight) + this.styles.table.padding;
+        return { width: 200, height: height }; // Default width
     }
-
-    /**
-     * Event handlers
-     */
 
     onTableClick(event, data) {
         this.selectTable(data);
@@ -952,97 +886,69 @@ export class KonvaERDRenderer {
             this.eventBus.emit('table:selected', data);
         }
     }
-
     onColumnClick(event, columnData, tableData) {
         if (this.eventBus) {
-            this.eventBus.emit('column:selected', { column: columnData, table: tableData });
+            this.eventBus.emit('column:selected', { table: tableData, column: columnData });
         }
     }
 
     onTableMouseEnter(event, data) {
-        this.hoveredTable = data;
-        // Add hover effect
         const tableGroup = this.tableGroups.get(data.name);
         if (tableGroup) {
-            const background = tableGroup.findOne('.table-background');
-            if (background) {
-                background.stroke('#94a3b8');
-                background.strokeWidth(2);
-                this.tablesLayer.draw();
-            }
+            // Simple hover effect, e.g., change cursor
+            this.stage.container().style.cursor = 'pointer';
+            this.hoveredTable = data;
         }
     }
 
     onTableMouseLeave(event, data) {
+        this.stage.container().style.cursor = 'default';
         this.hoveredTable = null;
-        // Remove hover effect
-        const tableGroup = this.tableGroups.get(data.name);
-        if (tableGroup) {
-            const background = tableGroup.findOne('.table-background');
-            if (background && data !== this.selectedTable) {
-                background.stroke(this.styles.table.border);
-                background.strokeWidth(this.styles.table.borderWidth);
-                this.tablesLayer.draw();
-            }
-        }
     }
-
     onConnectionClick(event, data) {
         if (this.eventBus) {
-            this.eventBus.emit('relationship:selected', data);
+            this.eventBus.emit('connection:selected', data);
         }
     }
 
     onConnectionMouseEnter(event, data) {
-        // Highlight connection
-        const fromTable = data.fromTable || data.sourceTable;
-        const toTable = data.toTable || data.targetTable;
-        const fromColumn = data.fromColumn || data.sourceColumn;
-        const toColumn = data.toColumn || data.targetColumn;
-        
-        const connectionGroup = this.connectionLines.get(`${fromTable}-${toTable}`);
+        const fromTable = data.from ? data.from.table : data.sourceTable;
+        const fromColumn = data.from ? data.from.column : data.sourceColumn;
+        const toTable = data.to ? data.to.table : data.targetTable;
+        const toColumn = data.to ? data.to.column : data.targetColumn;
+        const connectionKey = `${fromTable}-${fromColumn}-${toTable}-${toColumn}`;
+        const connectionGroup = this.connectionLines.get(connectionKey);
         if (connectionGroup) {
             const line = connectionGroup.findOne('.connection-line');
-            if (line) {
-                line.stroke(this.styles.connection.selectedStroke);
-                line.strokeWidth(this.styles.connection.selectedStrokeWidth);
-                this.connectionsLayer.draw();
-            }
+            line.stroke(this.styles.connection.selectedStroke);
+            line.strokeWidth(this.styles.connection.selectedStrokeWidth);
+            this.connectionsLayer.draw();
+
+            this.highlightRelatedColumns(fromTable, fromColumn, toTable, toColumn, true);
         }
-        
-        // Highlight related columns
-        this.highlightRelatedColumns(fromTable, fromColumn, toTable, toColumn, true);
     }
 
     onConnectionMouseLeave(event, data) {
-        // Remove connection highlight
-        const fromTable = data.fromTable || data.sourceTable;
-        const toTable = data.toTable || data.targetTable;
-        const fromColumn = data.fromColumn || data.sourceColumn;
-        const toColumn = data.toColumn || data.targetColumn;
-        
-        const connectionGroup = this.connectionLines.get(`${fromTable}-${toTable}`);
+        const fromTable = data.from ? data.from.table : data.sourceTable;
+        const fromColumn = data.from ? data.from.column : data.sourceColumn;
+        const toTable = data.to ? data.to.table : data.targetTable;
+        const toColumn = data.to ? data.to.column : data.targetColumn;
+        const connectionKey = `${fromTable}-${fromColumn}-${toTable}-${toColumn}`;
+        const connectionGroup = this.connectionLines.get(connectionKey);
         if (connectionGroup) {
             const line = connectionGroup.findOne('.connection-line');
-            if (line) {
-                line.stroke(this.styles.connection.stroke);
-                line.strokeWidth(this.styles.connection.strokeWidth);
-                this.connectionsLayer.draw();
-            }
+            line.stroke(this.styles.connection.stroke);
+            line.strokeWidth(this.styles.connection.strokeWidth);
+            this.connectionsLayer.draw();
+            this.highlightRelatedColumns(fromTable, fromColumn, toTable, toColumn, false);
         }
-        
-        // Remove column highlights
-        this.highlightRelatedColumns(fromTable, fromColumn, toTable, toColumn, false);
     }
 
     /**
-     * Highlight columns related to a relationship
+     * Highlight related columns in tables
      */
     highlightRelatedColumns(fromTable, fromColumn, toTable, toColumn, highlight) {
-        // Highlight source column
         this.highlightTableColumn(fromTable, fromColumn, highlight);
-        
-        // Highlight target column
         this.highlightTableColumn(toTable, toColumn, highlight);
     }
 
@@ -1051,40 +957,22 @@ export class KonvaERDRenderer {
      */
     highlightTableColumn(tableName, columnName, highlight) {
         const tableGroup = this.tableGroups.get(tableName);
-        if (!tableGroup) return;
-        
-        // Find the column background element
-        tableGroup.children.forEach(child => {
-            if (child.name() === 'column-background') {
-                const columnData = child.getAttr('columnData');
-                if (columnData && columnData.name === columnName) {
-                    if (highlight) {
-                        child.fill('#e3f2fd'); // Light blue highlight
-                        child.stroke('#2196f3'); // Blue border
-                        child.strokeWidth(2);
-                    } else {
-                        child.fill('transparent');
-                        child.stroke('transparent');
-                        child.strokeWidth(0);
-                    }
+        if (tableGroup) {
+            tableGroup.find('.column-background').forEach(bg => {
+                if (bg.getAttr('columnData').name === columnName) {
+                    bg.fill(highlight ? 'rgba(37, 99, 235, 0.1)' : 'transparent');
+                    this.tablesLayer.draw();
                 }
-            }
-        });
-        
-        this.tablesLayer.draw();
+            });
+        }
     }
-
     onDragStart(event, data, element) {
-        // Bring to front
         element.moveToTop();
         this.tablesLayer.draw();
     }
-
     onDrag(event, data, element) {
-        // Update connections for this table
         this.updateConnectionsForTable(data.name, element.x(), element.y());
     }
-
     onDragEnd(event, data, element) {
         // Update layout data
         if (this.currentLayout && this.currentLayout.tables) {
@@ -1131,50 +1019,21 @@ export class KonvaERDRenderer {
      * @param {Object} relationship - Relationship data
      */
     updateConnectionLine(connectionGroup, relationship) {
-        const fromPos = this.getTablePosition(relationship.fromTable, this.currentLayout);
-        const toPos = this.getTablePosition(relationship.toTable, this.currentLayout);
-        const fromSize = this.getTableSize(relationship.fromTable, this.currentLayout);
-        const toSize = this.getTableSize(relationship.toTable, this.currentLayout);
-
-        if (!fromPos || !toPos) return;
-
-        // Calculate new connection points
-        const connectionPoints = this.calculateConnectionPoints(
-            fromPos, fromSize, toPos, toSize, relationship.fromColumn
-        );
-
-        // Update line points
+        const pathPoints = this.calculateOrthogonalPath(relationship, this.currentLayout);
         const line = connectionGroup.findOne('.connection-line');
         if (line) {
-            line.points([
-                connectionPoints.source.x, connectionPoints.source.y,
-                connectionPoints.target.x, connectionPoints.target.y
-            ]);
+            line.points(pathPoints);
         }
 
-        // Update arrow marker
-        const arrow = connectionGroup.findOne('.arrow-marker');
-        if (arrow) {
-            const dx = connectionPoints.target.x - connectionPoints.source.x;
-            const dy = connectionPoints.target.y - connectionPoints.source.y;
-            const angle = Math.atan2(dy, dx);
+        // Update markers
+        connectionGroup.find('Line').forEach(marker => {
+            if (marker.name() !== 'connection-line') {
+                marker.destroy();
+            }
+        });
+        this.addRelationshipMarkers(connectionGroup, { source: { x: pathPoints[0], y: pathPoints[1] }, target: { x: pathPoints[pathPoints.length - 2], y: pathPoints[pathPoints.length - 1] } }, relationship);
 
-            const arrowLength = 10;
-            const arrowAngle = Math.PI / 6;
-
-            const arrowPoints = [
-                connectionPoints.target.x,
-                connectionPoints.target.y,
-                connectionPoints.target.x - arrowLength * Math.cos(angle - arrowAngle),
-                connectionPoints.target.y - arrowLength * Math.sin(angle - arrowAngle),
-                connectionPoints.target.x - arrowLength * Math.cos(angle + arrowAngle),
-                connectionPoints.target.y - arrowLength * Math.sin(angle + arrowAngle)
-            ];
-
-            arrow.points(arrowPoints);
-        }
-
-        this.connectionsLayer.draw();
+        this.connectionsLayer.batchDraw();
     }
 
     /**
@@ -1234,40 +1093,36 @@ export class KonvaERDRenderer {
             maxY = Math.max(maxY, box.y + box.height);
         });
 
-        const contentWidth = maxX - minX;
-        const contentHeight = maxY - minY;
+        const bounds = {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        };
+
         const stageWidth = this.stage.width();
         const stageHeight = this.stage.height();
+        const padding = 50;
 
-        // Calculate scale to fit content
-        const scaleX = stageWidth / (contentWidth + 100); // 100px padding
-        const scaleY = stageHeight / (contentHeight + 100);
-        const scale = Math.min(scaleX, scaleY, 1); // Don't zoom in beyond 100%
+        const scaleX = (stageWidth - padding * 2) / bounds.width;
+        const scaleY = (stageHeight - padding * 2) / bounds.height;
+        const scale = Math.min(scaleX, scaleY, 1); // Cap scale at 1
 
-        // Calculate center position
-        const centerX = (stageWidth - contentWidth * scale) / 2 - minX * scale;
-        const centerY = (stageHeight - contentHeight * scale) / 2 - minY * scale;
-
-        // Apply transform
         this.stage.scale({ x: scale, y: scale });
-        this.stage.position({ x: centerX, y: centerY });
 
-        // Emit zoom event
-        if (this.eventBus) {
-            this.eventBus.emit('zoom:changed', scale);
-        }
+        const newX = (stageWidth - bounds.width * scale) / 2 - bounds.x * scale;
+        const newY = (stageHeight - bounds.height * scale) / 2 - bounds.y * scale;
+
+        this.stage.position({ x: newX, y: newY });
     }
 
     /**
-     * Reset zoom to 100%
+     * Reset zoom and pan to default
      */
     resetZoom() {
         this.stage.scale({ x: 1, y: 1 });
         this.stage.position({ x: 0, y: 0 });
-
-        if (this.eventBus) {
-            this.eventBus.emit('zoom:changed', 1);
-        }
+        this.fitToView();
     }
 
     /**
@@ -1283,56 +1138,36 @@ export class KonvaERDRenderer {
      * @param {number} level - Zoom level
      */
     setZoomLevel(level) {
-        const clampedLevel = Math.max(this.options.minZoom, Math.min(this.options.maxZoom, level));
-        this.stage.scale({ x: clampedLevel, y: clampedLevel });
-
-        if (this.eventBus) {
-            this.eventBus.emit('zoom:changed', clampedLevel);
-        }
+        const newScale = Math.max(this.options.minZoom, Math.min(this.options.maxZoom, level));
+        this.stage.scale({ x: newScale, y: newScale });
     }
 
     /**
-     * Update layout
+     * Update the layout of the diagram
      * @param {Object} layout - New layout data
      */
     updateLayout(layout) {
         this.currentLayout = layout;
-        
-        // Update table positions
-        this.tableGroups.forEach((tableGroup, tableName) => {
-            const pos = this.getTablePosition(tableName, layout);
-            tableGroup.position({ x: pos.x, y: pos.y });
+        this.tableGroups.forEach((group, name) => {
+            const pos = this.getTablePosition(name, layout);
+            group.position(pos);
         });
-
-        // Update all connections
-        this.connectionLines.forEach((connectionGroup, key) => {
-            const relationship = connectionGroup.relationshipData;
-            if (relationship) {
-                this.updateConnectionLine(connectionGroup, relationship);
-            }
+        this.connectionLines.forEach((group, key) => {
+            this.updateConnectionLine(group, group.relationshipData);
         });
-
         this.tablesLayer.draw();
         this.connectionsLayer.draw();
     }
 
     /**
-     * Destroy the renderer and clean up resources
+     * Clean up resources
      */
     destroy() {
         if (this.stage) {
             this.stage.destroy();
         }
-        
-        // Clear object pools
         this.tableGroups.clear();
         this.connectionLines.clear();
-        
-        // Reset state
         this.initialized = false;
-        this.selectedTable = null;
-        this.hoveredTable = null;
-        
-        console.log(`%c[DESTROY] Konva ERD Renderer destroyed: ${this.instanceId}`, 'color: red;');
     }
 }

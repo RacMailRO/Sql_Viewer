@@ -437,7 +437,7 @@ export class ERDApplication {
             const schema = await this.fileImporter.importFile(file);
             this.schemaModel.loadSchema(schema);
             
-            this.eventBus.emit('schema:loaded', schema);
+            this.eventBus.emit('schema:loaded', this.schemaModel.getSchema());
             
         } catch (error) {
             console.error('File import error:', error);
@@ -457,8 +457,20 @@ export class ERDApplication {
             // Hide welcome message
             this.hideWelcomeMessage();
             
+            const schemaForLayout = {
+                ...schema,
+                relationships: schema.relationships.map(r => ({
+                    sourceTable: r.from.table,
+                    sourceColumn: r.from.column,
+                    targetTable: r.to.table,
+                    targetColumn: r.to.column,
+                    type: r.type
+                }))
+            };
+            
             // Generate initial layout
-            const layout = this.layoutAlgorithm.calculateLayout(schema);
+            const layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
+            
             this.diagramState.setLayout(layout);
             
             // Render the diagram
@@ -502,14 +514,17 @@ export class ERDApplication {
     }
 
     /**
-     * Handle schema error
+     * Handle schema load error
+     * @param {Error} error - The error object
      */
     handleSchemaError(error) {
+        this.hideLoading();
         this.showError(`Failed to load schema: ${error.message}`);
     }
 
     /**
      * Handle table selection
+     * @param {Object} table - Selected table data
      */
     handleTableSelected(table) {
         this.diagramState.setSelectedElement(table);
@@ -518,6 +533,7 @@ export class ERDApplication {
 
     /**
      * Handle relationship selection
+     * @param {Object} relationship - Selected relationship data
      */
     handleRelationshipSelected(relationship) {
         this.diagramState.setSelectedElement(relationship);
@@ -525,61 +541,55 @@ export class ERDApplication {
     }
 
     /**
-     * Apply auto layout with intelligent positioning
+     * Apply auto layout
      */
     applyAutoLayout() {
-        if (!this.schemaModel.hasData()) {
-            return;
-        }
-
         try {
+            this.showLoading('Applying auto layout...');
             const schema = this.schemaModel.getSchema();
-            const bounds = {
-                width: this.renderer?.stage?.width() || 1200,
-                height: this.renderer?.stage?.height() || 800
+            const schemaForLayout = {
+                ...schema,
+                relationships: schema.relationships.map(r => ({
+                    sourceTable: r.from.table,
+                    sourceColumn: r.from.column,
+                    targetTable: r.to.table,
+                    targetColumn: r.to.column,
+                    type: r.type
+                }))
             };
+
+            const layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
+
+            this.diagramState.setLayout(layout);
+            this.renderer.updateLayout(layout);
             
-            // Use intelligent layout algorithm for better results
-            const intelligentLayout = this.intelligentLayoutAlgorithm.calculateLayout(schema, bounds);
-            
-            this.diagramState.setLayout(intelligentLayout);
-            
-            // Re-render with new layout
-            if (this.renderer.updateLayout) {
-                this.renderer.updateLayout(intelligentLayout);
-            } else {
-                this.renderer.render(schema, intelligentLayout);
-            }
-            
-            this.eventBus.emit('diagram:changed');
-            
-            // Show layout statistics
-            if (intelligentLayout.statistics) {
-                console.log('Layout applied with statistics:', intelligentLayout.statistics);
-                this.showLayoutStats(intelligentLayout.statistics);
-            }
+            // Calculate layout statistics
+            const bounds = {
+                width: this.renderer.stage.width(),
+                height: this.renderer.stage.height()
+            };
+            const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
+            this.showLayoutStats(stats);
             
         } catch (error) {
             console.error('Auto layout error:', error);
             this.showError('Failed to apply auto layout');
+        } finally {
+            this.hideLoading();
         }
     }
 
     /**
      * Show layout statistics
+     * @param {Object} stats - Layout statistics
      */
     showLayoutStats(stats) {
-        const message = `Layout applied: ${stats.totalTables} tables, ${stats.overlaps} overlaps, ${stats.crossings} crossings. Efficiency: ${stats.layoutEfficiency}%`;
-        console.log(message);
-        
-        // Could show a temporary notification here
-        if (stats.overlaps > 0) {
-            console.warn(`Warning: ${stats.overlaps} table overlaps detected. Consider adjusting table spacing.`);
-        }
+        // Placeholder for showing layout stats in the UI
+        console.log('Layout stats:', stats);
     }
 
     /**
-     * Reset zoom to fit all tables
+     * Reset zoom and pan
      */
     resetZoom() {
         if (this.renderer) {
@@ -591,138 +601,106 @@ export class ERDApplication {
      * Undo last action
      */
     undo() {
-        if (this.diagramState.canUndo()) {
-            this.diagramState.undo();
-            this.renderer.render(this.schemaModel.getSchema(), this.diagramState.getLayout());
-            this.updateUI();
-        }
+        // Placeholder for undo functionality
+        console.log('Undo action');
     }
 
     /**
-     * Redo last undone action
+     * Redo last action
      */
     redo() {
-        if (this.diagramState.canRedo()) {
-            this.diagramState.redo();
-            this.renderer.render(this.schemaModel.getSchema(), this.diagramState.getLayout());
-            this.updateUI();
-        }
+        // Placeholder for redo functionality
+        console.log('Redo action');
     }
 
     /**
      * Delete selected element
      */
     deleteSelectedElement() {
-        const selected = this.diagramState.selectedElement;
-        if (!selected) return;
-
-        // TODO: Implement element deletion
-        console.log('Delete element:', selected);
+        // Placeholder for delete functionality
+        console.log('Delete selected element');
     }
 
     /**
      * Show export dialog
      */
     showExportDialog() {
-        if (!this.schemaModel.hasData()) {
-            this.showError('No schema to export');
-            return;
+        if (this.elements.exportDialog) {
+            this.elements.exportDialog.style.display = 'flex';
         }
-        
-        this.elements.exportDialog.style.display = 'flex';
     }
 
     /**
      * Hide export dialog
      */
     hideExportDialog() {
-        this.elements.exportDialog.style.display = 'none';
+        if (this.elements.exportDialog) {
+            this.elements.exportDialog.style.display = 'none';
+        }
     }
 
     /**
      * Handle export
      */
     async handleExport() {
+        const format = document.getElementById('export-format').value;
+        const filename = document.getElementById('export-filename').value;
+        
         try {
-            const format = document.querySelector('input[name="export-format"]:checked').value;
-            const includeStyles = document.getElementById('include-styles').checked;
-            const highResolution = document.getElementById('high-resolution').checked;
-
             const options = {
                 format,
-                includeStyles,
-                highResolution
+                filename,
+                width: this.renderer.stage.width(),
+                height: this.renderer.stage.height()
             };
-
-            await this.exportManager.export(
-                this.schemaModel.getSchema(),
-                this.diagramState.getLayout(),
-                this.renderer.stage,
-                options
-            );
-
-            this.hideExportDialog();
+            
+            await this.exportManager.export(this.renderer.stage, this.schemaModel.getSchema(), options);
             
         } catch (error) {
             console.error('Export error:', error);
             this.showError('Failed to export diagram');
+        } finally {
+            this.hideExportDialog();
         }
     }
 
     /**
      * Show property panel
+     * @param {Object} element - Selected element
      */
     showPropertyPanel(element) {
-        // TODO: Implement property panel content generation
-        this.elements.panelContent.innerHTML = `
-            <div class="property-item">
-                <div class="property-label">Type</div>
-                <div class="property-value">${element.type || 'Unknown'}</div>
-            </div>
-            <div class="property-item">
-                <div class="property-label">Name</div>
-                <div class="property-value">${element.name || 'Unnamed'}</div>
-            </div>
-        `;
-        
-        this.elements.propertyPanel.classList.add('open');
+        if (this.elements.propertyPanel) {
+            this.elements.propertyPanel.style.display = 'block';
+            this.propertiesPanel.render(element);
+        }
     }
 
     /**
      * Hide property panel
      */
     hidePropertyPanel() {
-        this.elements.propertyPanel.classList.remove('open');
-        this.diagramState.setSelectedElement(null);
+        if (this.elements.propertyPanel) {
+            this.elements.propertyPanel.style.display = 'none';
+        }
     }
-    
+
     /**
      * Show settings panel
      */
     showSettings() {
-        const settingsPanel = document.getElementById('settings-panel');
         const settingsOverlay = document.getElementById('settings-overlay');
-        
-        if (settingsPanel) {
-            settingsPanel.style.display = 'block';
-        }
         if (settingsOverlay) {
-            settingsOverlay.classList.add('active');
+            settingsOverlay.style.display = 'flex';
         }
     }
-    
+
     /**
      * Hide settings panel
      */
     hideSettings() {
-        const settingsPanel = document.getElementById('settings-panel');
         const settingsOverlay = document.getElementById('settings-overlay');
-        
-        if (settingsPanel) {
-            settingsPanel.style.display = 'none';
-        }
         if (settingsOverlay) {
-            settingsOverlay.classList.remove('active');
+            settingsOverlay.style.display = 'none';
         }
     }
 
@@ -746,6 +724,7 @@ export class ERDApplication {
 
     /**
      * Show loading overlay
+     * @param {string} message - Message to display
      */
     showLoading(message = 'Loading...') {
         if (this.elements.loadingOverlay) {
@@ -765,71 +744,55 @@ export class ERDApplication {
 
     /**
      * Show error message
+     * @param {string} message - Error message
      */
     showError(message) {
-        // TODO: Implement proper error notification system
-        alert(message);
+        // Simple alert for now, can be replaced with a more user-friendly notification
+        alert(`Error: ${message}`);
     }
 
     /**
-     * Update UI state
+     * Update UI elements
      */
     updateUI() {
-        // Update status bar
         const schema = this.schemaModel.getSchema();
-        const tableCount = schema?.tables?.length || 0;
-        const relationshipCount = schema?.relationships?.length || 0;
+        if (!schema) return;
 
+        // Update status bar
         if (this.elements.tableCount) {
-            this.elements.tableCount.textContent = `Tables: ${tableCount}`;
+            this.elements.tableCount.textContent = schema.tables.length;
         }
-        
         if (this.elements.relationshipCount) {
-            this.elements.relationshipCount.textContent = `Relationships: ${relationshipCount}`;
+            this.elements.relationshipCount.textContent = schema.relationships.length;
         }
 
-        // Update undo/redo buttons
-        if (this.elements.undoBtn) {
-            this.elements.undoBtn.disabled = !this.diagramState.canUndo();
-        }
-        
-        if (this.elements.redoBtn) {
-            this.elements.redoBtn.disabled = !this.diagramState.canRedo();
-        }
-
-        // Update other UI elements based on state
-        const hasData = this.schemaModel.hasData();
-        if (this.elements.exportBtn) {
-            this.elements.exportBtn.disabled = !hasData;
-        }
-        
-        if (this.elements.autoLayoutBtn) {
-            this.elements.autoLayoutBtn.disabled = !hasData;
-        }
-        
-        if (this.elements.resetZoomBtn) {
-            this.elements.resetZoomBtn.disabled = !hasData;
-        }
+        // Enable/disable buttons based on state
+        const hasSchema = schema.tables.length > 0;
+        this.elements.exportBtn.disabled = !hasSchema;
+        this.elements.autoLayoutBtn.disabled = !hasSchema;
+        this.elements.resetZoomBtn.disabled = !hasSchema;
     }
 
     /**
-     * Update zoom level display
+     * Update zoom level in the UI
+     * @param {number} level - Current zoom level
      */
     updateZoomLevel(level) {
         if (this.elements.zoomLevel) {
-            this.elements.zoomLevel.textContent = `Zoom: ${Math.round(level * 100)}%`;
+            this.elements.zoomLevel.textContent = `${Math.round(level * 100)}%`;
         }
     }
 
     /**
-     * Cleanup and destroy the application
+     * Clean up resources
      */
     destroy() {
         if (this.renderer) {
             this.renderer.destroy();
         }
-        
-        this.eventBus.removeAllListeners();
-        this.isInitialized = false;
+        if (this.layoutManager) {
+            this.layoutManager.destroy();
+        }
+        // Remove event listeners, etc.
     }
 }

@@ -115,21 +115,30 @@ export class SchemaModel {
      * @param {Object} relationshipData - Relationship definition
      */
     addRelationship(relationshipData) {
-        if (!relationshipData.sourceTable || !relationshipData.targetTable) {
-            throw new Error('Relationship must have sourceTable and targetTable');
+        const fromTable = relationshipData.from ? relationshipData.from.table : relationshipData.sourceTable;
+        const fromColumn = relationshipData.from ? relationshipData.from.column : relationshipData.sourceColumn;
+        const toTable = relationshipData.to ? relationshipData.to.table : relationshipData.targetTable;
+        const toColumn = relationshipData.to ? relationshipData.to.column : relationshipData.targetColumn;
+
+        if (!fromTable || !toTable) {
+            throw new Error('Relationship must have source and target tables');
         }
 
-        if (!relationshipData.sourceColumn || !relationshipData.targetColumn) {
-            throw new Error('Relationship must have sourceColumn and targetColumn');
+        if (!fromColumn || !toColumn) {
+            throw new Error('Relationship must have source and target columns');
         }
 
         const relationship = {
-            id: relationshipData.id || this.generateRelationshipId(relationshipData),
+            id: relationshipData.id || this.generateRelationshipId({sourceTable: fromTable, sourceColumn: fromColumn, targetTable: toTable, targetColumn: toColumn}),
             type: relationshipData.type || 'one-to-many',
-            sourceTable: relationshipData.sourceTable,
-            sourceColumn: relationshipData.sourceColumn,
-            targetTable: relationshipData.targetTable,
-            targetColumn: relationshipData.targetColumn,
+            from: {
+                table: fromTable,
+                column: fromColumn
+            },
+            to: {
+                table: toTable,
+                column: toColumn
+            },
             name: relationshipData.name || '',
             metadata: relationshipData.metadata || {}
         };
@@ -314,7 +323,7 @@ export class SchemaModel {
         
         // Remove relationships involving this table
         const relationshipsToRemove = Array.from(this.relationships).filter(rel => 
-            rel.sourceTable === tableName || rel.targetTable === tableName
+            rel.from.table === tableName || rel.to.table === tableName
         );
         
         relationshipsToRemove.forEach(rel => this.relationships.delete(rel));
@@ -392,26 +401,26 @@ export class SchemaModel {
 
         // Validate relationships
         for (const relationship of this.relationships) {
-            const sourceTable = this.getTable(relationship.sourceTable);
-            const targetTable = this.getTable(relationship.targetTable);
+            const sourceTable = this.getTable(relationship.from.table);
+            const targetTable = this.getTable(relationship.to.table);
 
             if (!sourceTable) {
-                throw new Error(`Relationship references non-existent source table: ${relationship.sourceTable}`);
+                throw new Error(`Relationship references non-existent source table: ${relationship.from.table}`);
             }
 
             if (!targetTable) {
-                throw new Error(`Relationship references non-existent target table: ${relationship.targetTable}`);
+                throw new Error(`Relationship references non-existent target table: ${relationship.to.table}`);
             }
 
-            const sourceColumn = sourceTable.columns.find(col => col.name === relationship.sourceColumn);
-            const targetColumn = targetTable.columns.find(col => col.name === relationship.targetColumn);
+            const sourceColumn = sourceTable.columns.find(col => col.name === relationship.from.column);
+            const targetColumn = targetTable.columns.find(col => col.name === relationship.to.column);
 
             if (!sourceColumn) {
-                throw new Error(`Relationship references non-existent source column: ${relationship.sourceTable}.${relationship.sourceColumn}`);
+                throw new Error(`Relationship references non-existent source column: ${relationship.from.table}.${relationship.from.column}`);
             }
 
             if (!targetColumn) {
-                throw new Error(`Relationship references non-existent target column: ${relationship.targetTable}.${relationship.targetColumn}`);
+                throw new Error(`Relationship references non-existent target column: ${relationship.to.table}.${relationship.to.column}`);
             }
         }
     }

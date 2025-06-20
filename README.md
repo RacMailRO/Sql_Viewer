@@ -2,7 +2,7 @@
 
 ## 🎯 Project Overview
 
-The ERD Generator is a comprehensive, web-based Entity Relationship Diagram visualization tool that transforms database schemas into interactive, professional-grade ERD diagrams. Built with modern web technologies and D3.js, it provides enterprise-level features for database design, analysis, and documentation.
+The ERD Generator is a comprehensive, web-based Entity Relationship Diagram visualization tool that transforms database schemas into interactive, professional-grade ERD diagrams. Built with modern web technologies and KonvaJS, it provides enterprise-level features for database design, analysis, and documentation.
 
 ## 🚀 Features
 
@@ -67,10 +67,10 @@ The ERD Generator is a comprehensive, web-based Entity Relationship Diagram visu
 
 ### **Technology Stack**
 - **Frontend**: HTML5, CSS3, Modern JavaScript (ES2022+)
-- **Visualization**: D3.js v7 with SVG rendering
+- **Visualization**: KonvaJS with Canvas rendering
 - **Build Tool**: Vite for development and bundling
 - **Styling**: CSS Custom Properties with modern CSS features
-- **Dependencies**: D3.js, jsPDF, File-saver
+- **Dependencies**: KonvaJS, jsPDF, File-saver
 
 ### **Project Structure**
 ```
@@ -88,7 +88,7 @@ erd-generator/
 │   │   ├── TextParser.js       # Plain text parser
 │   │   └── CsvParser.js        # CSV data parser
 │   ├── visualization/          # Rendering engines
-│   │   ├── ERDRenderer.js      # Main SVG renderer
+│   │   ├── KonvaERDRenderer.js      # Main Canvas renderer
 │   │   └── EnhancedERDRenderer.js # Advanced renderer with intelligence
 │   ├── algorithms/             # Layout and routing algorithms
 │   │   ├── LayoutAlgorithm.js  # Basic layout algorithms
@@ -124,35 +124,9 @@ The application uses a centralized EventBus system for component communication:
 
 ## 🚧 **Current Status & Issues**
 
-### **⚠️ Critical Issue: Table Drag Behavior**
-**Status**: UNRESOLVED - Active debugging in progress
-
-**Problem**: Tables do not follow mouse cursor smoothly during drag operations
-- **Symptoms**: Fractional delta values from D3 drag events (`-1.3016357421875`)
-- **Impact**: Tables jump or move incorrectly instead of smooth 1:1 mouse tracking
-- **Root Cause**: D3.js providing sub-pixel mouse deltas on high-DPI displays
-
-**Recent Attempts**:
-1. **Zoom Compensation**: Attempted to compensate for zoom transform scaling
-2. **Delta Scaling**: Tried adjusting D3 delta values by zoom factor
-3. **Mouse Position Tracking**: Latest attempt using raw mouse coordinates instead of D3 deltas
-
-**Current Implementation**: Mouse tracking approach using `event.sourceEvent.clientX/Y`
-```javascript
-// Latest approach - direct mouse coordinate tracking
-const mouseDeltaX = currentMouseX - startMouseX;
-const mouseDeltaY = currentMouseY - startMouseY;
-const svgDeltaX = mouseDeltaX / zoomTransform.k;
-const svgDeltaY = mouseDeltaY / zoomTransform.k;
-```
-
-**Debug Output** (showing the issue):
-```
-🖱️ DRAG EVENT [MOUSE-TRACKING] - Table: table_name
-   Mouse Delta: (-10, 0)
-   SVG Delta: (-10, 0)
-   New Position: (90, 180)
-```
+### **✅ Table Drag Behavior**
+**Status**: RESOLVED
+**Description**: The table drag behavior has been fixed and now works as expected.
 
 ### **✅ Successfully Implemented Features**
 

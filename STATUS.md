@@ -5,7 +5,8 @@
 ### Basic ERD Functionality
 - ✅ **Schema Parsing**: JSON, SQL, CSV, and Text format support
 - ✅ **Table Rendering**: Visual table representation with columns and data types
-- ✅ **Relationship Rendering**: Basic relationship lines between tables
+- ✅ **Relationship Rendering**: Orthogonal relationship lines between tables
+- ✅ **Colored Table Headers**: Table headers are now colored for better visual distinction
 - ✅ **Drag and Drop**: Table positioning with real-time connection updates
 - ✅ **Auto Layout**: Basic force-directed and grid layout algorithms
 - ✅ **File Import/Export**: Multiple format support for schema import/export
@@ -14,7 +15,7 @@
 - ✅ **Side-Only Connections**: Relationships connect from table sides at column level (no top/bottom)
 - ✅ **Enhanced Hover Areas**: 12px invisible hover zones for easier relationship selection
 - ✅ **Column Highlighting**: Connected columns highlight when hovering over relationships
-- ✅ **Improved Path Routing**: Intelligent orthogonal routing with collision avoidance
+- ✅ **Improved Path Routing**: Intelligent orthogonal routing
 - ✅ **Rich Tooltips**: Detailed relationship information on hover
 
 ### Advanced Export System
