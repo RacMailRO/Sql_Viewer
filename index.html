@@ -68,7 +68,7 @@
             <!-- Canvas Area -->
             <div class="canvas-container">
                 <div id="erd-canvas" class="erd-canvas">
-                    <!-- SVG will be inserted here by D3.js -->
+                    <!-- Canvas will be inserted here by KonvaJS -->
                 </div>
                 
                 <!-- Loading Overlay -->
@@ -164,7 +164,15 @@
                         <h4>Export Format</h4>
                         <div class="radio-group">
                             <label>
-                                <input type="radio" name="export-format" value="svg" checked>
+                                <input type="radio" name="export-format" value="png" checked>
+                                PNG (High Quality Image)
+                            </label>
+                            <label>
+                                <input type="radio" name="export-format" value="jpeg">
+                                JPEG (Compressed Image)
+                            </label>
+                            <label>
+                                <input type="radio" name="export-format" value="svg">
                                 SVG (Vector Graphics)
                             </label>
                             <label>

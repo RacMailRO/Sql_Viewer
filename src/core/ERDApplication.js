@@ -1,10 +1,9 @@
 import { EventBus } from './EventBus.js';
 import { SchemaModel } from './SchemaModel.js';
 import { DiagramState } from './DiagramState.js';
-import { ERDRenderer } from '../visualization/ERDRenderer.js';
+import { KonvaERDRenderer } from '../visualization/KonvaERDRenderer.js';
 import { FileImporter } from '../ui/FileImporter.js';
-import { ExportManager } from '../export/ExportManager.js';
-import { EnhancedExportManager } from '../export/EnhancedExportManager.js';
+import { KonvaExportManager } from '../export/KonvaExportManager.js';
 import { LayoutManager } from './LayoutManager.js';
 import { PropertiesPanel } from '../ui/PropertiesPanel.js';
 import { LayoutAlgorithm } from '../algorithms/LayoutAlgorithm.js';
@@ -23,7 +22,6 @@ export class ERDApplication {
         this.renderer = null;
         this.fileImporter = null;
         this.exportManager = null;
-        this.enhancedExportManager = null;
         this.layoutManager = null;
         this.propertiesPanel = null;
         this.layoutAlgorithm = null;
@@ -123,12 +121,12 @@ export class ERDApplication {
      * Initialize core components
      */
     async initializeComponents() {
-        // Initialize renderer
-        this.renderer = new ERDRenderer(this.elements.canvas, {
+        // Initialize Konva renderer
+        this.renderer = new KonvaERDRenderer(this.elements.canvas, {
             eventBus: this.eventBus
         });
         
-        // Initialize D3.js in the renderer
+        // Initialize Konva renderer
         await this.renderer.init();
 
         // Initialize file importer
@@ -136,16 +134,10 @@ export class ERDApplication {
             eventBus: this.eventBus
         });
 
-        // Initialize export manager
-        this.exportManager = new ExportManager({
+        // Initialize Konva export manager
+        this.exportManager = new KonvaExportManager({
             eventBus: this.eventBus
         });
-        
-        // Initialize enhanced export manager
-        this.enhancedExportManager = new EnhancedExportManager(
-            this.renderer?.d3,
-            this.eventBus
-        );
         
         // Initialize layout manager
         this.layoutManager = new LayoutManager(this.eventBus);
@@ -153,7 +145,7 @@ export class ERDApplication {
         // Initialize properties panel
         this.propertiesPanel = new PropertiesPanel(this.eventBus);
         
-        // Initialize file-saver in the export manager
+        // Initialize Konva export manager
         await this.exportManager.init();
 
         // Initialize layout algorithm
@@ -470,11 +462,7 @@ export class ERDApplication {
             this.diagramState.setLayout(layout);
             
             // Render the diagram
-            if (this.useEnhancedRenderer) {
-                this.renderer.render(schema);
-            } else {
-                this.renderer.render(schema, layout);
-            }
+            this.renderer.render(schema, layout);
             
             // Update filtering manager with new schema (if available)
             if (this.filteringManager && this.filteringManager.setSchemaData) {
@@ -493,10 +481,18 @@ export class ERDApplication {
             
             // Auto-apply layout and reset zoom for better initial positioning
             setTimeout(() => {
-                this.applyAutoLayout();
-                setTimeout(() => {
-                    this.resetZoom();
-                }, 100);
+                try {
+                    this.applyAutoLayout();
+                    setTimeout(() => {
+                        try {
+                            this.resetZoom();
+                        } catch (resetError) {
+                            console.error('Reset zoom error:', resetError);
+                        }
+                    }, 100);
+                } catch (layoutError) {
+                    console.error('Auto layout error:', layoutError);
+                }
             }, 100);
             
         } catch (error) {
@@ -538,7 +534,10 @@ export class ERDApplication {
 
         try {
             const schema = this.schemaModel.getSchema();
-            const bounds = { width: this.renderer?.width || 1200, height: this.renderer?.height || 800 };
+            const bounds = {
+                width: this.renderer?.stage?.width() || 1200,
+                height: this.renderer?.stage?.height() || 800
+            };
             
             // Use intelligent layout algorithm for better results
             const intelligentLayout = this.intelligentLayoutAlgorithm.calculateLayout(schema, bounds);
@@ -546,9 +545,7 @@ export class ERDApplication {
             this.diagramState.setLayout(intelligentLayout);
             
             // Re-render with new layout
-            if (this.useEnhancedRenderer) {
-                this.renderer.render(schema);
-            } else if (this.renderer.updateLayout) {
+            if (this.renderer.updateLayout) {
                 this.renderer.updateLayout(intelligentLayout);
             } else {
                 this.renderer.render(schema, intelligentLayout);
@@ -660,7 +657,7 @@ export class ERDApplication {
             await this.exportManager.export(
                 this.schemaModel.getSchema(),
                 this.diagramState.getLayout(),
-                this.renderer.getSVGElement(),
+                this.renderer.stage,
                 options
             );
 
