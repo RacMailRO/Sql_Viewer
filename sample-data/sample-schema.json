@@ -1,0 +1,453 @@
+{
+  "schema": {
+    "name": "E-commerce Database",
+    "description": "Sample e-commerce database schema for testing ERD Generator",
+    "version": "1.0",
+    "tables": [
+      {
+        "name": "users",
+        "displayName": "Users",
+        "description": "Customer accounts and user information",
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"],
+            "description": "Unique user identifier"
+          },
+          {
+            "name": "username",
+            "type": "VARCHAR(50)",
+            "constraints": ["UNIQUE", "NOT NULL"],
+            "description": "User login name"
+          },
+          {
+            "name": "email",
+            "type": "VARCHAR(255)",
+            "constraints": ["UNIQUE", "NOT NULL"],
+            "description": "User email address"
+          },
+          {
+            "name": "password_hash",
+            "type": "VARCHAR(255)",
+            "constraints": ["NOT NULL"],
+            "description": "Encrypted password"
+          },
+          {
+            "name": "first_name",
+            "type": "VARCHAR(100)",
+            "description": "User's first name"
+          },
+          {
+            "name": "last_name",
+            "type": "VARCHAR(100)",
+            "description": "User's last name"
+          },
+          {
+            "name": "phone",
+            "type": "VARCHAR(20)",
+            "description": "Contact phone number"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP",
+            "description": "Account creation timestamp"
+          },
+          {
+            "name": "updated_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP",
+            "description": "Last update timestamp"
+          }
+        ]
+      },
+      {
+        "name": "categories",
+        "displayName": "Product Categories",
+        "description": "Product category hierarchy",
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR(100)",
+            "constraints": ["NOT NULL"],
+            "description": "Category name"
+          },
+          {
+            "name": "description",
+            "type": "TEXT",
+            "description": "Category description"
+          },
+          {
+            "name": "parent_id",
+            "type": "INT",
+            "description": "Parent category for hierarchy"
+          },
+          {
+            "name": "slug",
+            "type": "VARCHAR(100)",
+            "constraints": ["UNIQUE", "NOT NULL"],
+            "description": "URL-friendly category name"
+          },
+          {
+            "name": "image_url",
+            "type": "VARCHAR(255)",
+            "description": "Category image URL"
+          },
+          {
+            "name": "sort_order",
+            "type": "INT",
+            "defaultValue": "0",
+            "description": "Display order"
+          },
+          {
+            "name": "is_active",
+            "type": "BOOLEAN",
+            "defaultValue": "true",
+            "description": "Whether category is active"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "products",
+        "displayName": "Products",
+        "description": "Product catalog",
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "category_id",
+            "type": "INT",
+            "constraints": ["NOT NULL"],
+            "description": "Product category"
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR(255)",
+            "constraints": ["NOT NULL"],
+            "description": "Product name"
+          },
+          {
+            "name": "description",
+            "type": "TEXT",
+            "description": "Product description"
+          },
+          {
+            "name": "sku",
+            "type": "VARCHAR(50)",
+            "constraints": ["UNIQUE", "NOT NULL"],
+            "description": "Stock keeping unit"
+          },
+          {
+            "name": "price",
+            "type": "DECIMAL(10,2)",
+            "constraints": ["NOT NULL"],
+            "description": "Product price"
+          },
+          {
+            "name": "cost",
+            "type": "DECIMAL(10,2)",
+            "description": "Product cost"
+          },
+          {
+            "name": "weight",
+            "type": "DECIMAL(8,2)",
+            "description": "Product weight in kg"
+          },
+          {
+            "name": "dimensions",
+            "type": "VARCHAR(100)",
+            "description": "Product dimensions"
+          },
+          {
+            "name": "stock_quantity",
+            "type": "INT",
+            "defaultValue": "0",
+            "description": "Available stock"
+          },
+          {
+            "name": "is_active",
+            "type": "BOOLEAN",
+            "defaultValue": "true"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          },
+          {
+            "name": "updated_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "orders",
+        "displayName": "Orders",
+        "description": "Customer orders",
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "user_id",
+            "type": "INT",
+            "constraints": ["NOT NULL"],
+            "description": "Customer who placed the order"
+          },
+          {
+            "name": "order_number",
+            "type": "VARCHAR(50)",
+            "constraints": ["UNIQUE", "NOT NULL"],
+            "description": "Human-readable order number"
+          },
+          {
+            "name": "status",
+            "type": "ENUM('pending', 'processing', 'shipped', 'delivered', 'cancelled')",
+            "defaultValue": "'pending'",
+            "description": "Order status"
+          },
+          {
+            "name": "subtotal",
+            "type": "DECIMAL(10,2)",
+            "constraints": ["NOT NULL"],
+            "description": "Order subtotal"
+          },
+          {
+            "name": "tax_amount",
+            "type": "DECIMAL(10,2)",
+            "defaultValue": "0.00",
+            "description": "Tax amount"
+          },
+          {
+            "name": "shipping_amount",
+            "type": "DECIMAL(10,2)",
+            "defaultValue": "0.00",
+            "description": "Shipping cost"
+          },
+          {
+            "name": "total_amount",
+            "type": "DECIMAL(10,2)",
+            "constraints": ["NOT NULL"],
+            "description": "Total order amount"
+          },
+          {
+            "name": "shipping_address",
+            "type": "TEXT",
+            "description": "Shipping address"
+          },
+          {
+            "name": "billing_address",
+            "type": "TEXT",
+            "description": "Billing address"
+          },
+          {
+            "name": "notes",
+            "type": "TEXT",
+            "description": "Order notes"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          },
+          {
+            "name": "updated_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "order_items",
+        "displayName": "Order Items",
+        "description": "Individual items within orders",
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "order_id",
+            "type": "INT",
+            "constraints": ["NOT NULL"],
+            "description": "Reference to order"
+          },
+          {
+            "name": "product_id",
+            "type": "INT",
+            "constraints": ["NOT NULL"],
+            "description": "Reference to product"
+          },
+          {
+            "name": "quantity",
+            "type": "INT",
+            "constraints": ["NOT NULL"],
+            "description": "Quantity ordered"
+          },
+          {
+            "name": "unit_price",
+            "type": "DECIMAL(10,2)",
+            "constraints": ["NOT NULL"],
+            "description": "Price per unit at time of order"
+          },
+          {
+            "name": "total_price",
+            "type": "DECIMAL(10,2)",
+            "constraints": ["NOT NULL"],
+            "description": "Total price for this line item"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "reviews",
+        "displayName": "Product Reviews",
+        "description": "Customer product reviews and ratings",
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "product_id",
+            "type": "INT",
+            "constraints": ["NOT NULL"],
+            "description": "Product being reviewed"
+          },
+          {
+            "name": "user_id",
+            "type": "INT",
+            "constraints": ["NOT NULL"],
+            "description": "User who wrote the review"
+          },
+          {
+            "name": "rating",
+            "type": "TINYINT",
+            "constraints": ["NOT NULL"],
+            "description": "Rating from 1 to 5"
+          },
+          {
+            "name": "title",
+            "type": "VARCHAR(255)",
+            "description": "Review title"
+          },
+          {
+            "name": "content",
+            "type": "TEXT",
+            "description": "Review content"
+          },
+          {
+            "name": "is_verified",
+            "type": "BOOLEAN",
+            "defaultValue": "false",
+            "description": "Whether the purchase is verified"
+          },
+          {
+            "name": "helpful_count",
+            "type": "INT",
+            "defaultValue": "0",
+            "description": "Number of helpful votes"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          },
+          {
+            "name": "updated_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "sourceTable": "categories",
+        "sourceColumn": "parent_id",
+        "targetTable": "categories",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "category_hierarchy",
+        "description": "Self-referencing category hierarchy"
+      },
+      {
+        "sourceTable": "products",
+        "sourceColumn": "category_id",
+        "targetTable": "categories",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "product_category",
+        "description": "Product belongs to category"
+      },
+      {
+        "sourceTable": "orders",
+        "sourceColumn": "user_id",
+        "targetTable": "users",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "user_orders",
+        "description": "User can have multiple orders"
+      },
+      {
+        "sourceTable": "order_items",
+        "sourceColumn": "order_id",
+        "targetTable": "orders",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "order_line_items",
+        "description": "Order contains multiple items"
+      },
+      {
+        "sourceTable": "order_items",
+        "sourceColumn": "product_id",
+        "targetTable": "products",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "order_item_product",
+        "description": "Order item references product"
+      },
+      {
+        "sourceTable": "reviews",
+        "sourceColumn": "product_id",
+        "targetTable": "products",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "product_reviews",
+        "description": "Product can have multiple reviews"
+      },
+      {
+        "sourceTable": "reviews",
+        "sourceColumn": "user_id",
+        "targetTable": "users",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "user_reviews",
+        "description": "User can write multiple reviews"
+      }
+    ]
+  }
+}

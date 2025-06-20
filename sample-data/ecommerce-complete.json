@@ -1,0 +1,545 @@
+{
+  "schema": {
+    "name": "Complete E-commerce Platform",
+    "description": "Comprehensive e-commerce database with complex relationships, indexes, and constraints",
+    "version": "2.0",
+    "tables": [
+      {
+        "name": "users",
+        "displayName": "Users",
+        "description": "Customer accounts and authentication",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"],
+            "description": "Unique user identifier"
+          },
+          {
+            "name": "username",
+            "type": "VARCHAR(50)",
+            "constraints": ["UNIQUE", "NOT NULL"],
+            "description": "User login name"
+          },
+          {
+            "name": "email",
+            "type": "VARCHAR(255)",
+            "constraints": ["UNIQUE", "NOT NULL"],
+            "description": "User email address"
+          },
+          {
+            "name": "first_name",
+            "type": "VARCHAR(100)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "last_name",
+            "type": "VARCHAR(100)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "phone",
+            "type": "VARCHAR(20)"
+          },
+          {
+            "name": "date_of_birth",
+            "type": "DATE"
+          },
+          {
+            "name": "is_active",
+            "type": "BOOLEAN",
+            "defaultValue": "true"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "categories",
+        "displayName": "Categories",
+        "description": "Product categories with hierarchy",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "parent_id",
+            "type": "BIGINT",
+            "description": "Parent category"
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR(100)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "slug",
+            "type": "VARCHAR(100)",
+            "constraints": ["UNIQUE", "NOT NULL"]
+          },
+          {
+            "name": "description",
+            "type": "TEXT"
+          },
+          {
+            "name": "is_active",
+            "type": "BOOLEAN",
+            "defaultValue": "true"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "brands",
+        "displayName": "Brands",
+        "description": "Product brands",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR(100)",
+            "constraints": ["UNIQUE", "NOT NULL"]
+          },
+          {
+            "name": "slug",
+            "type": "VARCHAR(100)",
+            "constraints": ["UNIQUE", "NOT NULL"]
+          },
+          {
+            "name": "description",
+            "type": "TEXT"
+          },
+          {
+            "name": "logo_url",
+            "type": "VARCHAR(500)"
+          },
+          {
+            "name": "is_active",
+            "type": "BOOLEAN",
+            "defaultValue": "true"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "products",
+        "displayName": "Products",
+        "description": "Product catalog",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "category_id",
+            "type": "BIGINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "brand_id",
+            "type": "BIGINT"
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR(255)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "slug",
+            "type": "VARCHAR(255)",
+            "constraints": ["UNIQUE", "NOT NULL"]
+          },
+          {
+            "name": "description",
+            "type": "TEXT"
+          },
+          {
+            "name": "sku",
+            "type": "VARCHAR(50)",
+            "constraints": ["UNIQUE", "NOT NULL"]
+          },
+          {
+            "name": "price",
+            "type": "DECIMAL(12,2)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "cost_price",
+            "type": "DECIMAL(12,2)"
+          },
+          {
+            "name": "stock_quantity",
+            "type": "INT",
+            "defaultValue": "0"
+          },
+          {
+            "name": "weight",
+            "type": "DECIMAL(8,3)"
+          },
+          {
+            "name": "is_active",
+            "type": "BOOLEAN",
+            "defaultValue": "true"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "orders",
+        "displayName": "Orders",
+        "description": "Customer orders",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "user_id",
+            "type": "BIGINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "order_number",
+            "type": "VARCHAR(50)",
+            "constraints": ["UNIQUE", "NOT NULL"]
+          },
+          {
+            "name": "status",
+            "type": "ENUM('pending', 'confirmed', 'shipped', 'delivered', 'cancelled')",
+            "defaultValue": "'pending'"
+          },
+          {
+            "name": "subtotal",
+            "type": "DECIMAL(12,2)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "tax_amount",
+            "type": "DECIMAL(12,2)",
+            "defaultValue": "0.00"
+          },
+          {
+            "name": "shipping_amount",
+            "type": "DECIMAL(12,2)",
+            "defaultValue": "0.00"
+          },
+          {
+            "name": "total_amount",
+            "type": "DECIMAL(12,2)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "shipping_address",
+            "type": "TEXT"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "order_items",
+        "displayName": "Order Items",
+        "description": "Items within orders",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "order_id",
+            "type": "BIGINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "product_id",
+            "type": "BIGINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "quantity",
+            "type": "INT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "unit_price",
+            "type": "DECIMAL(12,2)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "total_price",
+            "type": "DECIMAL(12,2)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "reviews",
+        "displayName": "Reviews",
+        "description": "Product reviews",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "product_id",
+            "type": "BIGINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "user_id",
+            "type": "BIGINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "rating",
+            "type": "TINYINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "title",
+            "type": "VARCHAR(255)"
+          },
+          {
+            "name": "content",
+            "type": "TEXT"
+          },
+          {
+            "name": "is_verified",
+            "type": "BOOLEAN",
+            "defaultValue": "false"
+          },
+          {
+            "name": "helpful_count",
+            "type": "INT",
+            "defaultValue": "0"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "shopping_cart",
+        "displayName": "Shopping Cart",
+        "description": "User shopping cart",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "user_id",
+            "type": "BIGINT"
+          },
+          {
+            "name": "session_id",
+            "type": "VARCHAR(255)"
+          },
+          {
+            "name": "product_id",
+            "type": "BIGINT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "quantity",
+            "type": "INT",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      },
+      {
+        "name": "coupons",
+        "displayName": "Coupons",
+        "description": "Discount coupons",
+        "columns": [
+          {
+            "name": "id",
+            "type": "BIGINT",
+            "constraints": ["PRIMARY KEY", "AUTO_INCREMENT"]
+          },
+          {
+            "name": "code",
+            "type": "VARCHAR(50)",
+            "constraints": ["UNIQUE", "NOT NULL"]
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR(255)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "type",
+            "type": "ENUM('percentage', 'fixed_amount')",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "value",
+            "type": "DECIMAL(12,2)",
+            "constraints": ["NOT NULL"]
+          },
+          {
+            "name": "minimum_amount",
+            "type": "DECIMAL(12,2)"
+          },
+          {
+            "name": "usage_limit",
+            "type": "INT"
+          },
+          {
+            "name": "used_count",
+            "type": "INT",
+            "defaultValue": "0"
+          },
+          {
+            "name": "is_active",
+            "type": "BOOLEAN",
+            "defaultValue": "true"
+          },
+          {
+            "name": "expires_at",
+            "type": "TIMESTAMP"
+          },
+          {
+            "name": "created_at",
+            "type": "TIMESTAMP",
+            "defaultValue": "CURRENT_TIMESTAMP"
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "sourceTable": "categories",
+        "sourceColumn": "parent_id",
+        "targetTable": "categories",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "category_hierarchy",
+        "description": "Self-referencing category hierarchy"
+      },
+      {
+        "sourceTable": "products",
+        "sourceColumn": "category_id",
+        "targetTable": "categories",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "product_category",
+        "description": "Products belong to categories"
+      },
+      {
+        "sourceTable": "products",
+        "sourceColumn": "brand_id",
+        "targetTable": "brands",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "product_brand",
+        "description": "Products belong to brands"
+      },
+      {
+        "sourceTable": "orders",
+        "sourceColumn": "user_id",
+        "targetTable": "users",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "user_orders",
+        "description": "Users can have multiple orders"
+      },
+      {
+        "sourceTable": "order_items",
+        "sourceColumn": "order_id",
+        "targetTable": "orders",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "order_line_items",
+        "description": "Orders contain multiple items"
+      },
+      {
+        "sourceTable": "order_items",
+        "sourceColumn": "product_id",
+        "targetTable": "products",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "order_item_product",
+        "description": "Order items reference products"
+      },
+      {
+        "sourceTable": "reviews",
+        "sourceColumn": "product_id",
+        "targetTable": "products",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "product_reviews",
+        "description": "Products can have multiple reviews"
+      },
+      {
+        "sourceTable": "reviews",
+        "sourceColumn": "user_id",
+        "targetTable": "users",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "user_reviews",
+        "description": "Users can write multiple reviews"
+      },
+      {
+        "sourceTable": "shopping_cart",
+        "sourceColumn": "user_id",
+        "targetTable": "users",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "user_cart",
+        "description": "Users can have cart items"
+      },
+      {
+        "sourceTable": "shopping_cart",
+        "sourceColumn": "product_id",
+        "targetTable": "products",
+        "targetColumn": "id",
+        "type": "one-to-many",
+        "name": "cart_products",
+        "description": "Cart items reference products"
+      }
+    ]
+  }
+}

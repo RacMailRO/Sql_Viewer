@@ -1,0 +1,208 @@
+# University Management System
+# Demonstrates complex academic relationships and hierarchies
+
+TABLE students
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  student_number VARCHAR(20) UNIQUE NOT NULL
+  first_name VARCHAR(100) NOT NULL
+  last_name VARCHAR(100) NOT NULL
+  email VARCHAR(255) UNIQUE NOT NULL
+  phone VARCHAR(20)
+  date_of_birth DATE NOT NULL
+  gender ENUM('male', 'female', 'other')
+  address TEXT
+  emergency_contact_name VARCHAR(200)
+  emergency_contact_phone VARCHAR(20)
+  enrollment_date DATE NOT NULL
+  graduation_date DATE
+  gpa DECIMAL(3,2) DEFAULT 0.00
+  total_credits INT DEFAULT 0
+  status ENUM('active', 'inactive', 'graduated', 'suspended') DEFAULT 'active'
+  major_id BIGINT NOT NULL FK
+  advisor_id BIGINT FK
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE faculty
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  employee_id VARCHAR(20) UNIQUE NOT NULL
+  first_name VARCHAR(100) NOT NULL
+  last_name VARCHAR(100) NOT NULL
+  email VARCHAR(255) UNIQUE NOT NULL
+  phone VARCHAR(20)
+  office_location VARCHAR(100)
+  title VARCHAR(100)
+  rank ENUM('instructor', 'assistant_professor', 'associate_professor', 'professor', 'emeritus')
+  department_id BIGINT NOT NULL FK
+  hire_date DATE NOT NULL
+  salary DECIMAL(10,2)
+  is_active BOOLEAN DEFAULT true
+  research_interests TEXT
+  office_hours VARCHAR(500)
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE departments
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  name VARCHAR(100) UNIQUE NOT NULL
+  code VARCHAR(10) UNIQUE NOT NULL
+  description TEXT
+  head_id BIGINT FK
+  college_id BIGINT NOT NULL FK
+  budget DECIMAL(12,2)
+  office_location VARCHAR(100)
+  phone VARCHAR(20)
+  email VARCHAR(255)
+  website_url VARCHAR(255)
+  established_year YEAR
+  is_active BOOLEAN DEFAULT true
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE colleges
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  name VARCHAR(100) UNIQUE NOT NULL
+  code VARCHAR(10) UNIQUE NOT NULL
+  description TEXT
+  dean_id BIGINT FK
+  budget DECIMAL(15,2)
+  building VARCHAR(100)
+  phone VARCHAR(20)
+  email VARCHAR(255)
+  website_url VARCHAR(255)
+  established_year YEAR
+  is_active BOOLEAN DEFAULT true
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE programs
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  name VARCHAR(100) NOT NULL
+  code VARCHAR(10) UNIQUE NOT NULL
+  degree_type ENUM('bachelor', 'master', 'doctorate', 'certificate')
+  department_id BIGINT NOT NULL FK
+  coordinator_id BIGINT FK
+  duration_years TINYINT NOT NULL
+  required_credits INT NOT NULL
+  description TEXT
+  admission_requirements TEXT
+  career_prospects TEXT
+  tuition_per_credit DECIMAL(8,2)
+  is_active BOOLEAN DEFAULT true
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE courses
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  code VARCHAR(20) UNIQUE NOT NULL
+  title VARCHAR(255) NOT NULL
+  description TEXT
+  department_id BIGINT NOT NULL FK
+  credit_hours TINYINT NOT NULL
+  lecture_hours TINYINT DEFAULT 0
+  lab_hours TINYINT DEFAULT 0
+  prerequisites TEXT
+  learning_outcomes TEXT
+  syllabus_url VARCHAR(500)
+  is_active BOOLEAN DEFAULT true
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE course_sections
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  course_id BIGINT NOT NULL FK
+  section_number VARCHAR(10) NOT NULL
+  semester ENUM('fall', 'spring', 'summer')
+  year YEAR NOT NULL
+  instructor_id BIGINT NOT NULL FK
+  max_enrollment INT NOT NULL
+  current_enrollment INT DEFAULT 0
+  classroom VARCHAR(50)
+  meeting_days VARCHAR(20)
+  start_time TIME
+  end_time TIME
+  start_date DATE
+  end_date DATE
+  status ENUM('scheduled', 'active', 'completed', 'cancelled') DEFAULT 'scheduled'
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE enrollments
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  student_id BIGINT NOT NULL FK
+  section_id BIGINT NOT NULL FK
+  enrollment_date DATE NOT NULL
+  drop_date DATE
+  grade VARCHAR(5)
+  grade_points DECIMAL(3,2)
+  attendance_percentage DECIMAL(5,2)
+  status ENUM('enrolled', 'dropped', 'completed', 'withdrawn') DEFAULT 'enrolled'
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE assignments
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  section_id BIGINT NOT NULL FK
+  title VARCHAR(255) NOT NULL
+  description TEXT
+  type ENUM('homework', 'quiz', 'exam', 'project', 'presentation')
+  total_points INT NOT NULL
+  due_date DATETIME NOT NULL
+  submission_method ENUM('online', 'paper', 'presentation')
+  instructions TEXT
+  rubric_url VARCHAR(500)
+  is_group_assignment BOOLEAN DEFAULT false
+  late_penalty_per_day DECIMAL(5,2) DEFAULT 0.00
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE submissions
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  assignment_id BIGINT NOT NULL FK
+  student_id BIGINT NOT NULL FK
+  submission_date DATETIME NOT NULL
+  file_url VARCHAR(500)
+  content TEXT
+  points_earned DECIMAL(6,2)
+  feedback TEXT
+  grade VARCHAR(5)
+  is_late BOOLEAN DEFAULT false
+  late_days INT DEFAULT 0
+  status ENUM('submitted', 'graded', 'returned') DEFAULT 'submitted'
+  graded_by BIGINT FK
+  graded_at TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE program_courses
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  program_id BIGINT NOT NULL FK
+  course_id BIGINT NOT NULL FK
+  requirement_type ENUM('required', 'elective', 'prerequisite')
+  year_level TINYINT
+  semester_recommended ENUM('fall', 'spring', 'summer', 'any')
+  sort_order INT DEFAULT 0
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+TABLE student_advisors
+  id BIGINT PRIMARY KEY AUTO_INCREMENT
+  student_id BIGINT NOT NULL FK
+  advisor_id BIGINT NOT NULL FK
+  assigned_date DATE NOT NULL
+  end_date DATE
+  is_primary BOOLEAN DEFAULT true
+  notes TEXT
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+RELATIONSHIPS
+students.major_id -> programs.id
+students.advisor_id -> faculty.id
+faculty.department_id -> departments.id
+departments.head_id -> faculty.id
+departments.college_id -> colleges.id
+colleges.dean_id -> faculty.id
+programs.department_id -> departments.id
+programs.coordinator_id -> faculty.id
+courses.department_id -> departments.id
+course_sections.course_id -> courses.id
+course_sections.instructor_id -> faculty.id
+enrollments.student_id -> students.id
+enrollments.section_id -> course_sections.id
+assignments.section_id -> course_sections.id
+submissions.assignment_id -> assignments.id
+submissions.student_id -> students.id
+submissions.graded_by -> faculty.id
+program_courses.program_id -> programs.id
+program_courses.course_id -> courses.id
+student_advisors.student_id -> students.id
+student_advisors.advisor_id -> faculty.id

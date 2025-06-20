@@ -1,0 +1,34 @@
+{
+  "name": "interactive-erd-generator",
+  "version": "1.0.0",
+  "description": "Interactive Entity Relationship Diagram Generator with drag-and-drop functionality",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:ui": "vitest --ui"
+  },
+  "keywords": [
+    "erd",
+    "database",
+    "diagram",
+    "visualization",
+    "d3js",
+    "svg"
+  ],
+  "author": "ERD Generator",
+  "license": "MIT",
+  "dependencies": {
+    "d3": "^7.8.5",
+    "file-saver": "^2.0.5",
+    "jspdf": "^2.5.1"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0",
+    "@vitest/ui": "^1.0.0"
+  }
+}

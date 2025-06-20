@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive ERD Generator</title>
+    <link rel="stylesheet" href="./assets/styles/main.css">
+    <link rel="stylesheet" href="./assets/styles/components.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <h1>ERD Generator</h1>
+                </div>
+                <div class="header-actions">
+                    <button id="export-btn" class="btn btn-primary">Export</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-section">
+                <button id="import-btn" class="btn btn-secondary">
+                    <span class="icon">📁</span>
+                    Import Schema
+                </button>
+                <input type="file" id="file-input" accept=".json,.sql,.txt,.csv" style="display: none;">
+            </div>
+            
+            <div class="toolbar-section">
+                <button id="auto-layout-btn" class="btn btn-secondary">
+                    <span class="icon">🔄</span>
+                    Auto Layout
+                </button>
+                <button id="reset-zoom-btn" class="btn btn-secondary">
+                    <span class="icon">🔍</span>
+                    Reset Zoom
+                </button>
+            </div>
+
+            <div class="toolbar-section">
+                <button id="undo-btn" class="btn btn-secondary" disabled>
+                    <span class="icon">↶</span>
+                    Undo
+                </button>
+                <button id="redo-btn" class="btn btn-secondary" disabled>
+                    <span class="icon">↷</span>
+                    Redo
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Canvas Area -->
+            <div class="canvas-container">
+                <div id="erd-canvas" class="erd-canvas">
+                    <!-- SVG will be inserted here by D3.js -->
+                </div>
+                
+                <!-- Loading Overlay -->
+                <div id="loading-overlay" class="loading-overlay" style="display: none;">
+                    <div class="loading-spinner"></div>
+                    <p>Processing schema...</p>
+                </div>
+
+                <!-- Welcome Message -->
+                <div id="welcome-message" class="welcome-message">
+                    <div class="welcome-content">
+                        <h2>Welcome to ERD Generator</h2>
+                        <p>Import your database schema to get started</p>
+                        <button id="welcome-import-btn" class="btn btn-primary">
+                            Import Schema File
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Property Panel -->
+            <div class="property-panel" id="property-panel">
+                <div class="panel-header">
+                    <h3>Properties</h3>
+                    <button id="close-panel-btn" class="close-btn">&times;</button>
+                </div>
+                <div class="panel-content" id="panel-content">
+                    <p class="panel-placeholder">Select a table or relationship to view properties</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-section">
+                <span id="zoom-level">Zoom: 100%</span>
+            </div>
+            <div class="status-section">
+                <span id="table-count">Tables: 0</span>
+            </div>
+            <div class="status-section">
+                <span id="relationship-count">Relationships: 0</span>
+            </div>
+        </div>
+
+        <!-- Export Dialog -->
+        <div id="export-dialog" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Export ERD</h3>
+                    <button class="close-btn" id="close-export-dialog">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="export-options">
+                        <h4>Export Format</h4>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="export-format" value="svg" checked>
+                                SVG (Vector Graphics)
+                            </label>
+                            <label>
+                                <input type="radio" name="export-format" value="pdf">
+                                PDF (Document)
+                            </label>
+                            <label>
+                                <input type="radio" name="export-format" value="json">
+                                JSON (Schema)
+                            </label>
+                            <label>
+                                <input type="radio" name="export-format" value="sql">
+                                SQL DDL (Schema)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="export-settings">
+                        <h4>Export Settings</h4>
+                        <label>
+                            <input type="checkbox" id="include-styles" checked>
+                            Include styling
+                        </label>
+                        <label>
+                            <input type="checkbox" id="high-resolution" checked>
+                            High resolution
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="cancel-export">Cancel</button>
+                    <button class="btn btn-primary" id="confirm-export">Export</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tooltip -->
+        <div id="tooltip" class="tooltip" style="display: none;">
+            <div class="tooltip-content"></div>
+        </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>
