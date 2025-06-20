@@ -112,15 +112,127 @@ export class ERDRenderer {
     setupDragBehavior() {
         const d3 = this.d3;
         const self = this;
+        
         this.dragBehavior = d3.drag()
             .on('start', function(event, d) {
-                self.onDragStart(event, d, this);
+                // Get the table group element
+                const tableGroup = d3.select(this);
+                
+                // Get current position from transform
+                const transform = tableGroup.attr('transform');
+                let startX = 0, startY = 0;
+                
+                if (transform) {
+                    const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
+                    if (match) {
+                        startX = parseFloat(match[1]);
+                        startY = parseFloat(match[2]);
+                    }
+                }
+                
+                // Get the SVG element and its transform
+                const svg = d3.select(self.container).select('svg');
+                const mainGroup = svg.select('.main-group');
+                
+                // Get the current zoom/pan transform
+                let zoomTransform = d3.zoomTransform(mainGroup.node());
+                if (!zoomTransform) {
+                    zoomTransform = d3.zoomIdentity;
+                }
+                
+                // Store initial position
+                d._currentX = startX;
+                d._currentY = startY;
+                
+                // Debug logging with toggle
+                if (window.ERD_DEBUG_ENABLED) {
+                    console.log(`🚀 DRAG START [ZOOM-COMPENSATED] - Table: ${d.name}`);
+                    console.log(`   Table Position: (${startX}, ${startY})`);
+                }
+                
+                // Add dragging class
+                tableGroup.classed('dragging', true);
+                
+                if (self.eventBus) {
+                    self.eventBus.emit('table:drag-start', d);
+                }
             })
             .on('drag', function(event, d) {
-                self.onDrag(event, d, this);
+                // Get the current zoom transform to check if it's affecting deltas
+                const svg = d3.select(self.container).select('svg');
+                const mainGroup = svg.select('.main-group');
+                let zoomTransform = d3.zoomTransform(mainGroup.node());
+                if (!zoomTransform) {
+                    zoomTransform = d3.zoomIdentity;
+                }
+                
+                // Compensate for zoom scaling on delta values
+                const scaledDx = event.dx / zoomTransform.k;
+                const scaledDy = event.dy / zoomTransform.k;
+                
+                d._currentX += scaledDx;
+                d._currentY += scaledDy;
+                
+                // Debug logging with toggle
+                if (window.ERD_DEBUG_ENABLED) {
+                    console.log(`🖱️ DRAG EVENT [ZOOM-COMPENSATED] - Table: ${d.name}`);
+                    console.log(`   Raw D3 Delta: (${event.dx}, ${event.dy})`);
+                    console.log(`   Zoom Scale: ${zoomTransform.k}`);
+                    console.log(`   Scaled Delta: (${scaledDx}, ${scaledDy})`);
+                    console.log(`   New Position: (${d._currentX}, ${d._currentY})`);
+                }
+                
+                // Update the table position
+                d3.select(this).attr('transform', `translate(${d._currentX}, ${d._currentY})`);
+                
+                // Update the layout data
+                if (self.currentLayout && self.currentLayout.tables) {
+                    const table = self.currentLayout.tables.find(t => t.name === d.name);
+                    if (table) {
+                        table.x = d._currentX;
+                        table.y = d._currentY;
+                    }
+                }
+                
+                // Update connections in real-time
+                self.updateConnectionsForTable(d.name, d._currentX, d._currentY);
+                
+                if (self.eventBus) {
+                    self.eventBus.emit('table:drag', { table: d, x: d._currentX, y: d._currentY });
+                }
+                
             })
             .on('end', function(event, d) {
-                self.onDragEnd(event, d, this);
+                // Debug logging with toggle
+                if (window.ERD_DEBUG_ENABLED) {
+                    console.log(`🏁 DRAG END [ZOOM-COMPENSATED] - Table: ${d.name}`);
+                    console.log(`   Final Transform: ${d3.select(this).attr('transform')}`);
+                }
+                
+                // Remove dragging class
+                d3.select(this).classed('dragging', false);
+                
+                // Clean up drag data
+                delete d._currentX;
+                delete d._currentY;
+                
+                if (self.eventBus) {
+                    const transform = d3.select(this).attr('transform');
+                    let x = 0, y = 0;
+                    if (transform) {
+                        const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
+                        if (match) {
+                            x = parseFloat(match[1]);
+                            y = parseFloat(match[2]);
+                        }
+                    }
+                    
+                    self.eventBus.emit('table:drag-end', {
+                        table: d,
+                        x: x,
+                        y: y
+                    });
+                }
             });
     }
 

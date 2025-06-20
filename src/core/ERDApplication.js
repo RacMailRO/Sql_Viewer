@@ -8,6 +8,9 @@ import { EnhancedExportManager } from '../export/EnhancedExportManager.js';
 import { LayoutManager } from './LayoutManager.js';
 import { PropertiesPanel } from '../ui/PropertiesPanel.js';
 import { LayoutAlgorithm } from '../algorithms/LayoutAlgorithm.js';
+import { IntelligentLayoutAlgorithm } from '../algorithms/IntelligentLayoutAlgorithm.js';
+import { SearchManager } from '../ui/SearchManager.js';
+import { FilteringManager } from '../ui/FilteringManager.js';
 
 /**
  * Main application class that orchestrates all components
@@ -24,12 +27,21 @@ export class ERDApplication {
         this.layoutManager = null;
         this.propertiesPanel = null;
         this.layoutAlgorithm = null;
+        this.searchManager = null;
+        this.filteringManager = null;
         
         // UI elements
         this.elements = {};
         
         // Application state
         this.isInitialized = false;
+        
+        // Settings
+        this.settings = {
+            tableDistance: 150,
+            layoutPadding: 50,
+            debugEnabled: false
+        };
     }
 
     /**
@@ -146,6 +158,18 @@ export class ERDApplication {
 
         // Initialize layout algorithm
         this.layoutAlgorithm = new LayoutAlgorithm();
+        
+        // Initialize intelligent layout algorithm
+        this.intelligentLayoutAlgorithm = new IntelligentLayoutAlgorithm();
+        
+        // Initialize search manager
+        this.searchManager = new SearchManager(this.eventBus);
+        
+        // Initialize filtering manager
+        this.filteringManager = new FilteringManager(this.eventBus);
+        
+        // Initialize statistical analyzer (placeholder - will be created when needed)
+        this.statisticalAnalyzer = null;
     }
 
     /**
@@ -162,7 +186,29 @@ export class ERDApplication {
         });
 
         this.elements.fileInput.addEventListener('change', (event) => {
-            this.handleFileImport(event);
+            // Show loading immediately when file is selected
+            if (event.target.files && event.target.files.length > 0) {
+                const file = event.target.files[0];
+                const fileExtension = file.name.split('.').pop().toLowerCase();
+                
+                let loadingMessage = 'Processing schema...';
+                if (fileExtension === 'csv') {
+                    loadingMessage = 'Parsing CSV and generating relationships...';
+                } else if (fileExtension === 'sql') {
+                    loadingMessage = 'Parsing SQL schema...';
+                } else if (fileExtension === 'json') {
+                    loadingMessage = 'Loading JSON schema...';
+                } else if (fileExtension === 'txt') {
+                    loadingMessage = 'Parsing text schema...';
+                }
+                
+                this.showLoading(loadingMessage);
+                
+                // Small delay to ensure UI updates before processing
+                setTimeout(() => {
+                    this.handleFileImport(event);
+                }, 50);
+            }
         });
 
         // Export events
@@ -236,6 +282,106 @@ export class ERDApplication {
                 this.hideExportDialog();
             }
         });
+        
+        // Toolbar button events
+        const searchBtn = document.getElementById('search-btn');
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                if (this.searchManager) {
+                    this.searchManager.show();
+                }
+            });
+        }
+        
+        const filterBtn = document.getElementById('filter-btn');
+        if (filterBtn) {
+            filterBtn.addEventListener('click', () => {
+                if (this.filteringManager) {
+                    this.filteringManager.toggle();
+                }
+            });
+        }
+        
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                this.showSettings();
+            });
+        }
+        
+        // Settings panel events
+        const closeSettingsBtn = document.getElementById('close-settings-btn');
+        if (closeSettingsBtn) {
+            closeSettingsBtn.addEventListener('click', () => {
+                this.hideSettings();
+            });
+        }
+        
+        const settingsOverlay = document.getElementById('settings-overlay');
+        if (settingsOverlay) {
+            settingsOverlay.addEventListener('click', () => {
+                this.hideSettings();
+            });
+        }
+        
+        // Debug toggle
+        const debugToggle = document.getElementById('debug-toggle');
+        if (debugToggle) {
+            debugToggle.addEventListener('change', (e) => {
+                window.ERD_DEBUG_ENABLED = e.target.checked;
+                localStorage.setItem('erd_debug_enabled', e.target.checked);
+                console.log('Debug logging:', e.target.checked ? 'enabled' : 'disabled');
+            });
+            
+            // Load debug setting
+            const savedDebugSetting = localStorage.getItem('erd_debug_enabled');
+            if (savedDebugSetting !== null) {
+                debugToggle.checked = savedDebugSetting === 'true';
+                window.ERD_DEBUG_ENABLED = debugToggle.checked;
+            } else {
+                // Enable debug by default for now to investigate drag issues
+                debugToggle.checked = true;
+                window.ERD_DEBUG_ENABLED = true;
+            }
+        }
+        
+        // Table distance setting
+        const tableDistanceInput = document.getElementById('table-distance');
+        const tableDistanceValue = document.getElementById('table-distance-value');
+        if (tableDistanceInput && tableDistanceValue) {
+            // Load saved setting
+            const savedDistance = localStorage.getItem('erd_table_distance');
+            if (savedDistance !== null) {
+                this.settings.tableDistance = parseInt(savedDistance);
+                tableDistanceInput.value = this.settings.tableDistance;
+                tableDistanceValue.textContent = this.settings.tableDistance + 'px';
+            }
+            
+            tableDistanceInput.addEventListener('input', (e) => {
+                this.settings.tableDistance = parseInt(e.target.value);
+                tableDistanceValue.textContent = this.settings.tableDistance + 'px';
+                localStorage.setItem('erd_table_distance', this.settings.tableDistance);
+            });
+        }
+        
+        // Layout padding setting
+        const layoutPaddingInput = document.getElementById('layout-padding');
+        const layoutPaddingValue = document.getElementById('layout-padding-value');
+        if (layoutPaddingInput && layoutPaddingValue) {
+            // Load saved setting
+            const savedPadding = localStorage.getItem('erd_layout_padding');
+            if (savedPadding !== null) {
+                this.settings.layoutPadding = parseInt(savedPadding);
+                layoutPaddingInput.value = this.settings.layoutPadding;
+                layoutPaddingValue.textContent = this.settings.layoutPadding + 'px';
+            }
+            
+            layoutPaddingInput.addEventListener('input', (e) => {
+                this.settings.layoutPadding = parseInt(e.target.value);
+                layoutPaddingValue.textContent = this.settings.layoutPadding + 'px';
+                localStorage.setItem('erd_layout_padding', this.settings.layoutPadding);
+            });
+        }
     }
 
     /**
@@ -294,16 +440,8 @@ export class ERDApplication {
         if (!file) return;
 
         try {
-            // Show specific loading message based on file type
-            const fileExtension = file.name.split('.').pop().toLowerCase();
-            let loadingMessage = 'Processing schema...';
-            
-            if (fileExtension === 'csv') {
-                loadingMessage = 'Parsing CSV and generating relationships...';
-            }
-            
-            this.showLoading(loadingMessage);
-            
+            // Loading animation is already shown by the file input event handler
+            // Just process the file
             const schema = await this.fileImporter.importFile(file);
             this.schemaModel.loadSchema(schema);
             
@@ -338,16 +476,28 @@ export class ERDApplication {
                 this.renderer.render(schema, layout);
             }
             
-            // Update filtering manager with new schema
-            this.filteringManager.setSchemaData(schema);
+            // Update filtering manager with new schema (if available)
+            if (this.filteringManager && this.filteringManager.setSchemaData) {
+                this.filteringManager.setSchemaData(schema);
+            }
             
-            // Run statistical analysis
-            this.statisticalAnalyzer.analyzeSchema(schema);
+            // Run statistical analysis (if available)
+            if (this.statisticalAnalyzer && this.statisticalAnalyzer.analyzeSchema) {
+                this.statisticalAnalyzer.analyzeSchema(schema);
+            }
             
             // Update UI
             this.updateUI();
             
             console.log('Schema loaded successfully:', schema);
+            
+            // Auto-apply layout and reset zoom for better initial positioning
+            setTimeout(() => {
+                this.applyAutoLayout();
+                setTimeout(() => {
+                    this.resetZoom();
+                }, 100);
+            }, 100);
             
         } catch (error) {
             console.error('Error handling schema load:', error);
@@ -379,7 +529,7 @@ export class ERDApplication {
     }
 
     /**
-     * Apply auto layout
+     * Apply auto layout with intelligent positioning
      */
     applyAutoLayout() {
         if (!this.schemaModel.hasData()) {
@@ -388,16 +538,46 @@ export class ERDApplication {
 
         try {
             const schema = this.schemaModel.getSchema();
-            const layout = this.layoutAlgorithm.calculateLayout(schema);
+            const bounds = { width: this.renderer?.width || 1200, height: this.renderer?.height || 800 };
             
-            this.diagramState.setLayout(layout);
-            this.renderer.updateLayout(layout);
+            // Use intelligent layout algorithm for better results
+            const intelligentLayout = this.intelligentLayoutAlgorithm.calculateLayout(schema, bounds);
+            
+            this.diagramState.setLayout(intelligentLayout);
+            
+            // Re-render with new layout
+            if (this.useEnhancedRenderer) {
+                this.renderer.render(schema);
+            } else if (this.renderer.updateLayout) {
+                this.renderer.updateLayout(intelligentLayout);
+            } else {
+                this.renderer.render(schema, intelligentLayout);
+            }
             
             this.eventBus.emit('diagram:changed');
+            
+            // Show layout statistics
+            if (intelligentLayout.statistics) {
+                console.log('Layout applied with statistics:', intelligentLayout.statistics);
+                this.showLayoutStats(intelligentLayout.statistics);
+            }
             
         } catch (error) {
             console.error('Auto layout error:', error);
             this.showError('Failed to apply auto layout');
+        }
+    }
+
+    /**
+     * Show layout statistics
+     */
+    showLayoutStats(stats) {
+        const message = `Layout applied: ${stats.totalTables} tables, ${stats.overlaps} overlaps, ${stats.crossings} crossings. Efficiency: ${stats.layoutEfficiency}%`;
+        console.log(message);
+        
+        // Could show a temporary notification here
+        if (stats.overlaps > 0) {
+            console.warn(`Warning: ${stats.overlaps} table overlaps detected. Consider adjusting table spacing.`);
         }
     }
 
@@ -517,6 +697,36 @@ export class ERDApplication {
     hidePropertyPanel() {
         this.elements.propertyPanel.classList.remove('open');
         this.diagramState.setSelectedElement(null);
+    }
+    
+    /**
+     * Show settings panel
+     */
+    showSettings() {
+        const settingsPanel = document.getElementById('settings-panel');
+        const settingsOverlay = document.getElementById('settings-overlay');
+        
+        if (settingsPanel) {
+            settingsPanel.style.display = 'block';
+        }
+        if (settingsOverlay) {
+            settingsOverlay.classList.add('active');
+        }
+    }
+    
+    /**
+     * Hide settings panel
+     */
+    hideSettings() {
+        const settingsPanel = document.getElementById('settings-panel');
+        const settingsOverlay = document.getElementById('settings-overlay');
+        
+        if (settingsPanel) {
+            settingsPanel.style.display = 'none';
+        }
+        if (settingsOverlay) {
+            settingsOverlay.classList.remove('active');
+        }
     }
 
     /**

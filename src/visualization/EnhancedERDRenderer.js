@@ -1066,19 +1066,40 @@ export class EnhancedERDRenderer extends ERDRenderer {
      * Create drag behavior with enhanced positioning
      */
     createDragBehavior() {
+        let dragOffset = { x: 0, y: 0 };
+        
         return d3.drag()
             .on('start', (event, table) => {
+                // Store the initial offset between mouse position and table position
+                const pos = this.tablePositions.get(table.name);
+                const tableGroup = d3.select(event.sourceEvent.target.closest('.table-group'));
+                
+                if (pos && tableGroup.node()) {
+                    const transform = d3.zoomTransform(tableGroup.node());
+                    const mouseX = (event.sourceEvent.offsetX || event.sourceEvent.layerX) / transform.k - transform.x / transform.k;
+                    const mouseY = (event.sourceEvent.offsetY || event.sourceEvent.layerY) / transform.k - transform.y / transform.k;
+                    
+                    dragOffset.x = mouseX - pos.x;
+                    dragOffset.y = mouseY - pos.y;
+                }
+                
                 this.emitEvent('table:dragstart', { table, event });
             })
             .on('drag', (event, table) => {
                 const pos = this.tablePositions.get(table.name);
-                if (pos) {
+                const tableGroup = d3.select(event.sourceEvent.target.closest('.table-group'));
+                
+                if (pos && tableGroup.node()) {
+                    // Calculate new position using the stored offset
+                    const transform = d3.zoomTransform(tableGroup.node().parentNode);
+                    const newX = (event.x / transform.k) - transform.x / transform.k - dragOffset.x;
+                    const newY = (event.y / transform.k) - transform.y / transform.k - dragOffset.y;
+                    
+                    // Apply boundaries
                     pos.x = Math.max(this.settings.tableMargin,
-                        Math.min(this.width - pos.width - this.settings.tableMargin,
-                            pos.x + event.dx));
+                        Math.min(this.width - pos.width - this.settings.tableMargin, newX));
                     pos.y = Math.max(this.settings.tableMargin,
-                        Math.min(this.height - pos.height - this.settings.tableMargin,
-                            pos.y + event.dy));
+                        Math.min(this.height - pos.height - this.settings.tableMargin, newY));
                     
                     // Snap to grid if enabled
                     if (this.settings.snapToGrid) {
@@ -1086,15 +1107,16 @@ export class EnhancedERDRenderer extends ERDRenderer {
                         pos.y = Math.round(pos.y / this.settings.gridSize) * this.settings.gridSize;
                     }
                     
-                    // Update table position
-                    d3.select(event.sourceEvent.target.closest('.table-group'))
-                        .attr('transform', `translate(${pos.x}, ${pos.y})`);
+                    // Update table position smoothly
+                    tableGroup.attr('transform', `translate(${pos.x}, ${pos.y})`);
                     
                     // Update connected relationships
                     this.updateConnectedRelationships(table.name);
                 }
             })
             .on('end', (event, table) => {
+                // Reset drag offset
+                dragOffset = { x: 0, y: 0 };
                 this.emitEvent('table:dragend', { table, event });
             });
     }
@@ -1375,13 +1397,349 @@ export class EnhancedERDRenderer extends ERDRenderer {
             this.eventBus.on('settings:reset', (settings) => {
                 this.updateSettings(settings);
             });
+            
+            // Search navigation events
+            this.eventBus.on('search:navigate', (data) => {
+                this.navigateToSearchResult(data);
+            });
+            
+            this.eventBus.on('search:clearHighlight', () => {
+                this.clearSearchHighlights();
+            });
         }
         
         // Clear selections on background click
         this.svg.on('click', () => {
             this.selectedElements.clear();
             this.updateSelectionHighlight();
+            this.clearSearchHighlights();
         });
+    }
+
+    /**
+     * Navigate to search result with smooth animation
+     */
+    navigateToSearchResult(data) {
+        const { type, target, animate = true, highlight = true } = data;
+        
+        let targetElement = null;
+        let targetBounds = null;
+        
+        // Find the target element
+        switch (type) {
+            case 'table':
+                targetElement = this.findTableElement(target.name);
+                targetBounds = this.getTableBounds(target.name);
+                break;
+            case 'column':
+                targetElement = this.findColumnElement(target.table, target.column);
+                targetBounds = this.getColumnBounds(target.table, target.column);
+                break;
+            case 'relationship':
+                targetElement = this.findRelationshipElement(target.fromTable, target.toTable);
+                targetBounds = this.getRelationshipBounds(target.fromTable, target.toTable);
+                break;
+        }
+        
+        if (!targetBounds) {
+            console.warn('Target element not found for navigation:', target);
+            return;
+        }
+        
+        // Clear existing highlights
+        this.clearSearchHighlights();
+        
+        // Calculate zoom and pan to center the target
+        const viewportCenter = {
+            x: this.width / 2,
+            y: this.height / 2
+        };
+        
+        const targetCenter = {
+            x: targetBounds.x + targetBounds.width / 2,
+            y: targetBounds.y + targetBounds.height / 2
+        };
+        
+        // Calculate optimal zoom level
+        const padding = 100;
+        const maxZoom = 2;
+        const minZoom = 0.3;
+        
+        let zoomLevel = Math.min(
+            (this.width - 2 * padding) / targetBounds.width,
+            (this.height - 2 * padding) / targetBounds.height,
+            maxZoom
+        );
+        zoomLevel = Math.max(zoomLevel, minZoom);
+        
+        // Calculate pan offset
+        const panX = viewportCenter.x - targetCenter.x * zoomLevel;
+        const panY = viewportCenter.y - targetCenter.y * zoomLevel;
+        
+        if (animate) {
+            this.animateToPosition(panX, panY, zoomLevel, () => {
+                if (highlight && targetElement) {
+                    this.highlightSearchTarget(targetElement, type);
+                }
+            });
+        } else {
+            this.setViewTransform(panX, panY, zoomLevel);
+            if (highlight && targetElement) {
+                this.highlightSearchTarget(targetElement, type);
+            }
+        }
+        
+        // Emit navigation complete event
+        this.emitEvent('search:navigationComplete', { type, target });
+    }
+
+    /**
+     * Find table element in SVG
+     */
+    findTableElement(tableName) {
+        return this.tablesGroup.selectAll('.table-group')
+            .filter(d => d.name === tableName)
+            .node();
+    }
+
+    /**
+     * Find column element in SVG
+     */
+    findColumnElement(tableName, columnName) {
+        const tableGroup = this.tablesGroup.selectAll('.table-group')
+            .filter(d => d.name === tableName);
+        
+        if (tableGroup.empty()) return null;
+        
+        // Find the specific column background element
+        return tableGroup.selectAll('.column-background')
+            .filter((d, i) => {
+                const table = tableGroup.datum();
+                const column = table.columns ? table.columns[i] : null;
+                return column && column.name === columnName;
+            })
+            .node();
+    }
+
+    /**
+     * Find relationship element in SVG
+     */
+    findRelationshipElement(fromTable, toTable) {
+        const relationshipId = `${fromTable}-${toTable}`;
+        return this.connectionsGroup.select(`[data-relationship-id*="${relationshipId}"]`).node();
+    }
+
+    /**
+     * Get table bounds
+     */
+    getTableBounds(tableName) {
+        const position = this.tablePositions.get(tableName);
+        if (!position) return null;
+        
+        return {
+            x: position.x,
+            y: position.y,
+            width: position.width,
+            height: position.height
+        };
+    }
+
+    /**
+     * Get column bounds
+     */
+    getColumnBounds(tableName, columnName) {
+        const tablePosition = this.tablePositions.get(tableName);
+        if (!tablePosition) return null;
+        
+        const table = this.currentData?.tables?.find(t => t.name === tableName);
+        if (!table || !table.columns) return null;
+        
+        const columnIndex = table.columns.findIndex(col => col.name === columnName);
+        if (columnIndex === -1) return null;
+        
+        const headerHeight = 40;
+        const rowHeight = 25;
+        const columnY = tablePosition.y + headerHeight + columnIndex * rowHeight;
+        
+        return {
+            x: tablePosition.x,
+            y: columnY,
+            width: tablePosition.width,
+            height: rowHeight
+        };
+    }
+
+    /**
+     * Get relationship bounds
+     */
+    getRelationshipBounds(fromTable, toTable) {
+        const pos1 = this.tablePositions.get(fromTable);
+        const pos2 = this.tablePositions.get(toTable);
+        
+        if (!pos1 || !pos2) return null;
+        
+        const minX = Math.min(pos1.x, pos2.x);
+        const minY = Math.min(pos1.y, pos2.y);
+        const maxX = Math.max(pos1.x + pos1.width, pos2.x + pos2.width);
+        const maxY = Math.max(pos1.y + pos1.height, pos2.y + pos2.height);
+        
+        return {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        };
+    }
+
+    /**
+     * Animate to specific position and zoom
+     */
+    animateToPosition(targetX, targetY, targetZoom, callback) {
+        if (!this.svg) return;
+        
+        const currentTransform = d3.zoomTransform(this.svg.node());
+        const duration = 800;
+        
+        const interpolateX = d3.interpolate(currentTransform.x, targetX);
+        const interpolateY = d3.interpolate(currentTransform.y, targetY);
+        const interpolateK = d3.interpolate(currentTransform.k, targetZoom);
+        
+        this.svg.transition()
+            .duration(duration)
+            .ease(d3.easeCubicOut)
+            .tween('zoom', () => {
+                return (t) => {
+                    const newTransform = d3.zoomIdentity
+                        .translate(interpolateX(t), interpolateY(t))
+                        .scale(interpolateK(t));
+                    
+                    this.svg.call(this.zoom.transform, newTransform);
+                };
+            })
+            .on('end', () => {
+                if (callback) callback();
+            });
+    }
+
+    /**
+     * Set view transform directly
+     */
+    setViewTransform(x, y, scale) {
+        if (!this.svg) return;
+        
+        const transform = d3.zoomIdentity.translate(x, y).scale(scale);
+        this.svg.call(this.zoom.transform, transform);
+    }
+
+    /**
+     * Highlight search target
+     */
+    highlightSearchTarget(element, type) {
+        if (!element) return;
+        
+        const d3Element = d3.select(element);
+        
+        // Remove existing search highlights
+        this.svg.selectAll('.search-highlight, .search-highlight-column, .search-highlight-relationship')
+            .classed('search-highlight search-highlight-column search-highlight-relationship', false);
+        
+        // Apply appropriate highlight class
+        switch (type) {
+            case 'table':
+                d3Element.closest('.table-group').classed('search-highlight', true);
+                break;
+            case 'column':
+                d3Element.classed('search-highlight-column', true);
+                break;
+            case 'relationship':
+                d3Element.classed('search-highlight-relationship', true);
+                break;
+        }
+    }
+
+    /**
+     * Clear search highlights
+     */
+    clearSearchHighlights() {
+        if (this.svg) {
+            this.svg.selectAll('.search-highlight, .search-highlight-column, .search-highlight-relationship')
+                .classed('search-highlight search-highlight-column search-highlight-relationship', false);
+        }
+    }
+
+    /**
+     * Setup zoom and pan with enhanced features
+     */
+    setupZoomAndPan() {
+        if (!this.svg) return;
+        
+        this.zoom = d3.zoom()
+            .scaleExtent([0.1, 5])
+            .on('zoom', (event) => {
+                const { transform } = event;
+                
+                // Apply transform to main groups
+                if (this.gridOverlay) this.gridOverlay.attr('transform', transform);
+                if (this.connectionsGroup) this.connectionsGroup.attr('transform', transform);
+                if (this.tablesGroup) this.tablesGroup.attr('transform', transform);
+                
+                // Emit zoom change event
+                this.emitEvent('zoom:changed', transform.k);
+            });
+        
+        this.svg.call(this.zoom);
+        
+        // Set initial zoom to fit content
+        this.fitToContent();
+    }
+
+    /**
+     * Fit content to viewport
+     */
+    fitToContent() {
+        if (!this.currentData || !this.currentData.tables || this.currentData.tables.length === 0) {
+            return;
+        }
+        
+        // Calculate bounds of all tables
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
+        this.tablePositions.forEach((pos, tableName) => {
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            maxX = Math.max(maxX, pos.x + pos.width);
+            maxY = Math.max(maxY, pos.y + pos.height);
+        });
+        
+        if (minX === Infinity) return;
+        
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+        const contentCenterX = minX + contentWidth / 2;
+        const contentCenterY = minY + contentHeight / 2;
+        
+        // Calculate zoom to fit with padding
+        const padding = 50;
+        const scale = Math.min(
+            (this.width - 2 * padding) / contentWidth,
+            (this.height - 2 * padding) / contentHeight,
+            2 // Maximum zoom
+        );
+        
+        // Calculate pan to center
+        const panX = this.width / 2 - contentCenterX * scale;
+        const panY = this.height / 2 - contentCenterY * scale;
+        
+        // Apply transform
+        const transform = d3.zoomIdentity.translate(panX, panY).scale(scale);
+        this.svg.call(this.zoom.transform, transform);
+    }
+
+    /**
+     * Reset zoom to fit all content
+     */
+    resetZoom() {
+        this.fitToContent();
     }
 
     /**

@@ -9,20 +9,14 @@
 </head>
 <body>
     <div id="app">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
+        <!-- Toolbar with integrated branding -->
+        <div class="toolbar">
+            <div class="toolbar-section branding-section">
                 <div class="logo">
                     <h1>ERD Generator</h1>
                 </div>
-                <div class="header-actions">
-                    <button id="export-btn" class="btn btn-primary">Export</button>
-                </div>
+                <button id="export-btn" class="btn btn-primary">Export</button>
             </div>
-        </header>
-
-        <!-- Toolbar -->
-        <div class="toolbar">
             <div class="toolbar-section">
                 <button id="import-btn" class="btn btn-secondary">
                     <span class="icon">📁</span>
@@ -50,6 +44,21 @@
                 <button id="redo-btn" class="btn btn-secondary" disabled>
                     <span class="icon">↷</span>
                     Redo
+                </button>
+            </div>
+
+            <div class="toolbar-section">
+                <button id="search-btn" class="btn btn-secondary" title="Search (Ctrl+K or Alt+Q)">
+                    <span class="icon">🔍</span>
+                    Search
+                </button>
+                <button id="filter-btn" class="btn btn-secondary" title="Filters (Alt+F)">
+                    <span class="icon">🔧</span>
+                    Filters
+                </button>
+                <button id="settings-btn" class="btn btn-secondary" title="Settings (Alt+S)">
+                    <span class="icon">⚙️</span>
+                    Settings
                 </button>
             </div>
         </div>
@@ -102,6 +111,44 @@
             </div>
             <div class="status-section">
                 <span id="relationship-count">Relationships: 0</span>
+            </div>
+            
+            <!-- Settings Overlay -->
+            <div class="settings-overlay" id="settings-overlay"></div>
+            
+            <!-- Settings Panel -->
+            <div class="settings-panel" id="settings-panel" style="display: none;">
+                <div class="panel-header">
+                    <h3>Settings</h3>
+                    <button id="close-settings-btn" class="close-btn">&times;</button>
+                </div>
+                <div class="panel-content">
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" id="debug-toggle" />
+                            Enable Debug Logging
+                        </label>
+                        <p class="setting-description">Show detailed console logs for drag operations and debugging</p>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="table-distance">Table Distance</label>
+                        <div class="range-input">
+                            <input type="range" id="table-distance" min="50" max="300" value="150" />
+                            <span class="range-value" id="table-distance-value">150px</span>
+                        </div>
+                        <p class="setting-description">Minimum distance between tables in auto-layout</p>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label for="layout-padding">Layout Padding</label>
+                        <div class="range-input">
+                            <input type="range" id="layout-padding" min="20" max="100" value="50" />
+                            <span class="range-value" id="layout-padding-value">50px</span>
+                        </div>
+                        <p class="setting-description">Padding around the diagram edges</p>
+                    </div>
+                </div>
             </div>
         </div>
 
