@@ -170,6 +170,7 @@ export class ERDRenderer {
             })
             .call(this.dragBehavior)
             .on('click', (event, d) => {
+                event.stopPropagation();
                 this.onTableClick(event, d);
             })
             .on('mouseenter', (event, d) => {
@@ -249,12 +250,16 @@ export class ERDRenderer {
     renderColumn(columnsGroup, columnData, index, tableWidth, rowHeight) {
         const d3 = this.d3;
         const columnGroup = columnsGroup.append('g')
-            .attr('class', 'column-group')
-            .attr('transform', `translate(0, ${index * rowHeight})`);
+            .attr('class', `column-group ${this.getColumnClass(columnData)}`)
+            .attr('transform', `translate(0, ${index * rowHeight})`)
+            .datum(columnData); // Store column data for events
 
-        // Column background (for hover effects)
+        // Enhanced column background with FK styling
+        const isFk = columnData.isForeignKey || this.isForeignKey(columnData);
+        const bgClass = isFk ? 'table-row foreign-key-row' : 'table-row';
+        
         columnGroup.append('rect')
-            .attr('class', 'table-row')
+            .attr('class', bgClass)
             .attr('width', tableWidth)
             .attr('height', rowHeight)
             .on('mouseenter', (event) => {
@@ -264,19 +269,19 @@ export class ERDRenderer {
                 d3.select(event.target).classed('hover', false);
             });
 
-        // Key indicator
+        // Enhanced key indicators
         if (columnData.isPrimaryKey || this.isPrimaryKey(columnData)) {
             columnGroup.append('text')
-                .attr('class', 'key-indicator')
+                .attr('class', 'key-indicator primary-key-indicator')
                 .attr('x', 6)
                 .attr('y', rowHeight / 2)
                 .attr('text-anchor', 'start')
                 .attr('dominant-baseline', 'central')
                 .text('🔑')
                 .style('font-size', '12px');
-        } else if (columnData.isForeignKey || this.isForeignKey(columnData)) {
+        } else if (isFk) {
             columnGroup.append('text')
-                .attr('class', 'key-indicator')
+                .attr('class', 'key-indicator foreign-key-indicator')
                 .attr('x', 6)
                 .attr('y', rowHeight / 2)
                 .attr('text-anchor', 'start')
@@ -285,8 +290,8 @@ export class ERDRenderer {
                 .style('font-size', '12px');
         }
 
-        // Column name
-        const nameX = (columnData.isPrimaryKey || columnData.isForeignKey || 
+        // Column name with enhanced FK styling
+        const nameX = (columnData.isPrimaryKey || columnData.isForeignKey ||
                       this.isPrimaryKey(columnData) || this.isForeignKey(columnData)) ? 24 : 8;
         
         columnGroup.append('text')
@@ -295,12 +300,39 @@ export class ERDRenderer {
             .attr('y', rowHeight / 2)
             .text(columnData.name);
 
+        // FK badge for foreign keys
+        if (isFk) {
+            columnGroup.append('rect')
+                .attr('class', 'fk-badge')
+                .attr('x', tableWidth - 65)
+                .attr('y', rowHeight / 2 - 6)
+                .attr('width', 20)
+                .attr('height', 12)
+                .attr('rx', 2);
+                
+            columnGroup.append('text')
+                .attr('class', 'fk-badge-text')
+                .attr('x', tableWidth - 55)
+                .attr('y', rowHeight / 2)
+                .attr('text-anchor', 'middle')
+                .attr('dominant-baseline', 'central')
+                .text('FK');
+        }
+
         // Column type
         columnGroup.append('text')
             .attr('class', 'column-type')
             .attr('x', tableWidth - 8)
             .attr('y', rowHeight / 2)
             .text(this.formatColumnType(columnData.type));
+
+        // Add click event for column selection
+        columnGroup
+            .style('cursor', 'pointer')
+            .on('click', (event, d) => {
+                event.stopPropagation();
+                this.onColumnClick(event, columnData);
+            });
     }
 
     /**
@@ -523,27 +555,184 @@ export class ERDRenderer {
      * @param {Object} targetPoint - Target point
      * @param {string} relationshipType - Type of relationship
      */
-    addRelationshipMarkers(connectionGroup, sourcePoint, targetPoint, relationshipType) {
-        // Add arrow marker at target point
-        const arrowSize = 6;
-        const angle = Math.atan2(targetPoint.y - sourcePoint.y, targetPoint.x - sourcePoint.x);
+    addRelationshipMarkers(connectionGroup, sourcePoint, targetPoint, relationshipData) {
+        const relationshipType = relationshipData.type || 'one-to-many';
         
-        connectionGroup.append('polygon')
-            .attr('class', 'connection-marker')
-            .attr('points', `0,0 ${-arrowSize},${arrowSize/2} ${-arrowSize},${-arrowSize/2}`)
-            .attr('transform', `translate(${targetPoint.x}, ${targetPoint.y}) rotate(${angle * 180 / Math.PI})`);
-
-        // Add relationship type indicator
-        if (relationshipType && relationshipType !== 'one-to-many') {
-            const midX = (sourcePoint.x + targetPoint.x) / 2;
-            const midY = (sourcePoint.y + targetPoint.y) / 2;
-            
-            connectionGroup.append('text')
-                .attr('class', 'relationship-label')
-                .attr('x', midX)
-                .attr('y', midY - 5)
-                .text(this.formatRelationshipType(relationshipType));
+        // Calculate angle for marker orientation
+        const dx = targetPoint.x - sourcePoint.x;
+        const dy = targetPoint.y - sourcePoint.y;
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        
+        // Add Crow's Foot notation markers
+        this.addCrowsFootMarkers(connectionGroup, sourcePoint, targetPoint, relationshipType, angle);
+        
+        // Add relationship type label (optional)
+        if (relationshipData.showLabel !== false) {
+            this.addRelationshipLabel(connectionGroup, sourcePoint, targetPoint, relationshipType);
         }
+    }
+
+    /**
+     * Add Crow's Foot notation markers
+     * @param {Object} connectionGroup - Connection group
+     * @param {Object} sourcePoint - Source point
+     * @param {Object} targetPoint - Target point
+     * @param {string} relationshipType - Type of relationship
+     * @param {number} angle - Connection angle
+     */
+    addCrowsFootMarkers(connectionGroup, sourcePoint, targetPoint, relationshipType, angle) {
+        const markerSize = 8;
+        
+        // Determine cardinality for source and target
+        const cardinality = this.parseRelationshipCardinality(relationshipType);
+        
+        // Add source marker (near source table)
+        this.addCardinalityMarker(
+            connectionGroup,
+            sourcePoint,
+            cardinality.source,
+            angle + 180, // Reverse angle for source
+            'source-marker'
+        );
+        
+        // Add target marker (near target table)
+        this.addCardinalityMarker(
+            connectionGroup,
+            targetPoint,
+            cardinality.target,
+            angle,
+            'target-marker'
+        );
+    }
+
+    /**
+     * Parse relationship type to determine cardinality
+     * @param {string} relationshipType - Type of relationship
+     * @returns {Object} Cardinality for source and target
+     */
+    parseRelationshipCardinality(relationshipType) {
+        const cardinalityMap = {
+            'one-to-one': { source: 'one', target: 'one' },
+            'one-to-many': { source: 'one', target: 'many' },
+            'many-to-one': { source: 'many', target: 'one' },
+            'many-to-many': { source: 'many', target: 'many' },
+            'zero-or-one': { source: 'zero-or-one', target: 'one' },
+            'zero-or-many': { source: 'zero-or-many', target: 'one' }
+        };
+        
+        return cardinalityMap[relationshipType] || { source: 'one', target: 'many' };
+    }
+
+    /**
+     * Add cardinality marker using Crow's Foot notation
+     * @param {Object} group - SVG group
+     * @param {Object} point - Connection point
+     * @param {string} cardinality - Cardinality type
+     * @param {number} angle - Rotation angle
+     * @param {string} className - CSS class name
+     */
+    addCardinalityMarker(group, point, cardinality, angle, className) {
+        const markerGroup = group.append('g')
+            .attr('class', `cardinality-marker ${className}`)
+            .attr('transform', `translate(${point.x}, ${point.y}) rotate(${angle})`);
+
+        const size = 8;
+        const offset = 15; // Distance from connection point
+
+        switch (cardinality) {
+            case 'one':
+                // Single vertical line |
+                markerGroup.append('line')
+                    .attr('class', 'cardinality-line')
+                    .attr('x1', -offset)
+                    .attr('y1', -size/2)
+                    .attr('x2', -offset)
+                    .attr('y2', size/2);
+                break;
+                
+            case 'many':
+                // Crow's foot <
+                markerGroup.append('path')
+                    .attr('class', 'cardinality-crowfoot')
+                    .attr('d', `M ${-offset} 0 L ${-offset - size} ${-size/2} M ${-offset} 0 L ${-offset - size} ${size/2}`);
+                break;
+                
+            case 'zero-or-one':
+                // Circle and line O|
+                markerGroup.append('circle')
+                    .attr('class', 'cardinality-circle')
+                    .attr('cx', -offset - size)
+                    .attr('cy', 0)
+                    .attr('r', size/3);
+                markerGroup.append('line')
+                    .attr('class', 'cardinality-line')
+                    .attr('x1', -offset)
+                    .attr('y1', -size/2)
+                    .attr('x2', -offset)
+                    .attr('y2', size/2);
+                break;
+                
+            case 'zero-or-many':
+                // Circle and crow's foot O<
+                markerGroup.append('circle')
+                    .attr('class', 'cardinality-circle')
+                    .attr('cx', -offset - size)
+                    .attr('cy', 0)
+                    .attr('r', size/3);
+                markerGroup.append('path')
+                    .attr('class', 'cardinality-crowfoot')
+                    .attr('d', `M ${-offset} 0 L ${-offset - size/2} ${-size/3} M ${-offset} 0 L ${-offset - size/2} ${size/3}`);
+                break;
+        }
+    }
+
+    /**
+     * Add relationship label
+     * @param {Object} group - SVG group
+     * @param {Object} sourcePoint - Source point
+     * @param {Object} targetPoint - Target point
+     * @param {string} relationshipType - Type of relationship
+     */
+    addRelationshipLabel(group, sourcePoint, targetPoint, relationshipType) {
+        const midX = (sourcePoint.x + targetPoint.x) / 2;
+        const midY = (sourcePoint.y + targetPoint.y) / 2;
+        
+        const labelGroup = group.append('g')
+            .attr('class', 'relationship-label-group')
+            .attr('transform', `translate(${midX}, ${midY})`);
+            
+        // Background for better readability
+        const label = this.formatRelationshipType(relationshipType);
+        const bbox = this.measureText(label, '10px');
+        
+        labelGroup.append('rect')
+            .attr('class', 'relationship-label-bg')
+            .attr('x', -bbox.width/2 - 3)
+            .attr('y', -bbox.height/2 - 1)
+            .attr('width', bbox.width + 6)
+            .attr('height', bbox.height + 2)
+            .attr('rx', 2);
+            
+        labelGroup.append('text')
+            .attr('class', 'relationship-label')
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'central')
+            .text(label);
+    }
+
+    /**
+     * Measure text dimensions (simplified)
+     * @param {string} text - Text to measure
+     * @param {string} fontSize - Font size
+     * @returns {Object} Width and height
+     */
+    measureText(text, fontSize) {
+        // Simplified text measurement
+        const charWidth = parseInt(fontSize) * 0.6;
+        return {
+            width: text.length * charWidth,
+            height: parseInt(fontSize) + 2
+        };
     }
 
     /**
@@ -682,6 +871,27 @@ export class ERDRenderer {
         
         if (this.eventBus) {
             this.eventBus.emit('table:selected', data);
+            this.eventBus.emit('table:click', data); // For Properties Panel
+        }
+    }
+
+    /**
+     * Handle column click
+     * @param {Object} event - Mouse event
+     * @param {Object} data - Column data
+     */
+    onColumnClick(event, data) {
+        // Clear previous column selection
+        this.tablesGroup.selectAll('.column-group').classed('selected', false);
+        
+        // Select clicked column
+        const d3 = this.d3;
+        d3.select(event.currentTarget).classed('selected', true);
+        this.selectedColumn = data;
+        
+        if (this.eventBus) {
+            this.eventBus.emit('column:selected', data);
+            this.eventBus.emit('column:click', data); // For Properties Panel
         }
     }
 
