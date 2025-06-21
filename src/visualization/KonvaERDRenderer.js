@@ -905,20 +905,218 @@ export class KonvaERDRenderer {
             }
         }
 
-        const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTable, fromSide);
-        const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTable, toSide);
+        // Use table's layout info directly for side connection points
+        const sourceTableLayoutInfo = { x: fromPos.x, y: fromPos.y, width: fromSize.width, height: fromSize.height };
+        const targetTableLayoutInfo = { x: toPos.x, y: toPos.y, width: toSize.width, height: toSize.height };
 
-        const points = [];
-        points.push(sourcePoint.x, sourcePoint.y);
+        const sourcePoint = this.getTableSideConnectionPoint(sourceTableLayoutInfo, fromSide);
+        const targetPoint = this.getTableSideConnectionPoint(targetTableLayoutInfo, toSide);
 
-        const midX = sourcePoint.x + (targetPoint.x - sourcePoint.x) / 2;
+        const points = [sourcePoint.x, sourcePoint.y];
+        const standoff = 30; // How far out from the table the first segment goes
 
-        points.push(midX, sourcePoint.y);
-        points.push(midX, targetPoint.y);
+        let currentX = sourcePoint.x;
+        let currentY = sourcePoint.y;
 
+        // Obstacles: all other tables' bounding boxes (excluding source and target)
+        const obstacles = this.currentSchema.tables
+            .filter(t => t.name !== fromTable.name && t.name !== toTable.name)
+            .map(t => {
+                const pos = this.getTablePosition(t.name, layout);
+                const size = this.getTableSize(t.name, layout);
+                // Create a slightly padded obstacle for better clearance
+                const padding = 5;
+                return {
+                    x: pos.x - padding,
+                    y: pos.y - padding,
+                    width: size.width + 2 * padding,
+                    height: size.height + 2 * padding,
+                    name: t.name
+                };
+            });
+
+        // 1. Initial segment outwards from source table
+        let nextX = currentX;
+        if (fromSide === 'left') {
+            nextX -= standoff;
+        } else { // right
+            nextX += standoff;
+        }
+        // No obstacle check needed for this short segment if standoff is reasonable
+        points.push(nextX, currentY);
+        currentX = nextX;
+
+        // Attempt a 5-segment path (typical for orthogonal routing)
+        // Path: source -> p1(currentX,currentY) -> p2 -> p3 -> p4(preTargetX, targetPoint.y) -> targetPoint
+
+        let p2Y, p3X;
+
+        // Determine primary direction of connection (horizontal or vertical dominance)
+        const dxTotal = targetPoint.x - sourcePoint.x;
+        const dyTotal = targetPoint.y - sourcePoint.y;
+
+        if (Math.abs(dxTotal) > Math.abs(dyTotal) || fromSide !== toSide) { // Prefer horizontal dominant routing or when sides are opposite
+            p2Y = (currentY + targetPoint.y) / 2;
+            if (!this.isPathClear(currentX, currentY, currentX, p2Y, obstacles)) {
+                 // If direct path to midY is blocked, try targetY directly on currentX before horizontal move
+                 if (this.isPathClear(currentX, currentY, currentX, targetPoint.y, obstacles)) {
+                    p2Y = targetPoint.y;
+                 } else { // If still blocked, use original Y and hope horizontal move clears
+                    p2Y = currentY;
+                 }
+            }
+        } else { // Prefer vertical dominant routing
+             p2Y = targetPoint.y; // Try to align Y with target first
+             if (!this.isPathClear(currentX, currentY, currentX, p2Y, obstacles)) {
+                 p2Y = currentY; // Fallback if direct Y alignment is blocked
+             }
+        }
+        points.push(currentX, p2Y);
+        currentY = p2Y;
+
+        // p3: Horizontal segment to align with target's standoff X
+        let preTargetX = targetPoint.x;
+        if (toSide === 'left') {
+            preTargetX += standoff;
+        } else { // right
+            preTargetX -= standoff;
+        }
+        p3X = preTargetX;
+
+        if (!this.isPathClear(currentX, currentY, p3X, currentY, obstacles)) {
+            // If direct horizontal path is blocked, attempt a vertical detour
+            // This part can get very complex for optimal detours.
+            // Simple: if currentY is roughly between source and target Y, try moving to sourceY or targetY
+            // and then horizontally. This is a heuristic.
+            let detourY = (Math.abs(currentY - sourcePoint.y) < Math.abs(currentY - targetPoint.y)) ? sourcePoint.y : targetPoint.y;
+            if (currentY === targetPoint.y) detourY = sourcePoint.y; // Switch if already at targetY
+
+            if(this.isPathClear(currentX, currentY, currentX, detourY, obstacles)) { // Vertical leg of detour
+                points.push(currentX, detourY);
+                currentY = detourY;
+                // Now try horizontal move at this new Y
+                if(!this.isPathClear(currentX, currentY, p3X, currentY, obstacles)) {
+                    // If still blocked, we might be stuck with a direct line or accept crossing
+                    console.warn(`Routing obstacle for ${fromTable.name} to ${toTable.name}. Path may be suboptimal.`);
+                }
+            } else {
+                 console.warn(`Routing obstacle for ${fromTable.name} to ${toTable.name}. Path may be suboptimal.`);
+            }
+        }
+        points.push(p3X, currentY);
+        currentX = p3X;
+
+        // p4: Vertical segment to align with targetPoint.y
+        if (currentY !== targetPoint.y) { // Only add if Y is different
+             if (!this.isPathClear(currentX, currentY, currentX, targetPoint.y, obstacles)) {
+                 console.warn(`Routing obstacle for final Y alignment for ${fromTable.name} to ${toTable.name}.`);
+             }
+            points.push(currentX, targetPoint.y);
+            currentY = targetPoint.y;
+        }
+
+        // Final segment into the target table
         points.push(targetPoint.x, targetPoint.y);
 
-        return points;
+        return this.simplifyPath(points);
+    }
+
+    /**
+     * Get a connection point on the side of a table's bounding box.
+     * @param {Object} tableLayoutInfo - Object containing { x, y, width, height } for the table.
+     * @param {string} side - 'left' or 'right'.
+     * @returns {Object} Point with x and y.
+     */
+    getTableSideConnectionPoint(tableLayoutInfo, side) {
+        let x;
+        const y = tableLayoutInfo.y + tableLayoutInfo.height / 2; // Vertical midpoint
+
+        if (side === 'left') {
+            x = tableLayoutInfo.x;
+        } else { // right
+            x = tableLayoutInfo.x + tableLayoutInfo.width;
+        }
+        return { x, y };
+    }
+
+    // Helper: Check if a line segment intersects a rectangle
+    // Rect is {x, y, width, height}
+    lineIntersectsRect(x1, y1, x2, y2, rect) {
+        const padding = 1; // Collision padding
+        const rx = rect.x - padding;
+        const ry = rect.y - padding;
+        const rwidth = rect.width + 2 * padding;
+        const rheight = rect.height + 2 * padding;
+
+        // Check intersection with each side of the rectangle
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx, ry, rx + rwidth, ry)) return true; // Top
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx + rwidth, ry, rx + rwidth, ry + rheight)) return true; // Right
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx + rwidth, ry + rheight, rx, ry + rheight)) return true; // Bottom
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx, ry + rheight, rx, ry)) return true; // Left
+
+        // Check if line is fully inside (for orthogonal lines that don't cross segments but are contained)
+        // A simple check: if midpoint of line is inside rect.
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        if (x1 === x2 || y1 === y2) { // Only for perfectly horizontal/vertical lines
+            if (midX > rx && midX < rx + rwidth && midY > ry && midY < ry + rheight) {
+                 // Check if either endpoint is outside. If so, it must intersect.
+                 const p1_inside = (x1 >= rx && x1 <= rx + rwidth && y1 >= ry && y1 <= ry + rheight);
+                 const p2_inside = (x2 >= rx && x2 <= rx + rwidth && y2 >= ry && y2 <= ry + rheight);
+                 if (!p1_inside || !p2_inside) return true;
+            }
+        }
+        return false;
+    }
+
+    // Helper: Check if two line segments intersect
+    lineSegmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (den === 0) return false; // Parallel or collinear
+
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+
+        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+    }
+
+    // Helper: Check if a path segment is clear of obstacles
+    isPathClear(x1, y1, x2, y2, obstacles) {
+        for (const obs of obstacles) {
+            if (this.lineIntersectsRect(x1, y1, x2, y2, obs)) {
+                return false; // Path is blocked
+            }
+        }
+        return true; // Path is clear
+    }
+
+    // Helper: Simplify path by removing redundant collinear points
+    simplifyPath(points) {
+        if (points.length <= 4) return points;
+        const simplified = [points[0], points[1]];
+        for (let i = 2; i < points.length - 2; i += 2) {
+            const x1 = simplified[simplified.length - 2];
+            const y1 = simplified[simplified.length - 1];
+            const x2 = points[i];
+            const y2 = points[i + 1];
+            const x3 = points[i + 2];
+            const y3 = points[i + 3];
+
+            const isCollinear = (x1 === x2 && x2 === x3) || (y1 === y2 && y2 === y3);
+            if (!isCollinear) {
+                simplified.push(x2, y2);
+            }
+        }
+        simplified.push(points[points.length - 2], points[points.length - 1]);
+
+        // Final check: if last two points are same as third to last two, remove last two
+        if (simplified.length >=6 &&
+            simplified[simplified.length-1] === simplified[simplified.length-3] &&
+            simplified[simplified.length-2] === simplified[simplified.length-4]) {
+            simplified.pop();
+            simplified.pop();
+        }
+        return simplified;
     }
 
 
