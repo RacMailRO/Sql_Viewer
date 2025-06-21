@@ -612,17 +612,29 @@ export class KonvaERDRenderer {
         tableGroup.on('mouseleave', (e) => {
             this.onTableMouseLeave(e, tableData);
             // Only hide if not over the button itself
-            const pointerPos = this.stage.getPointerPosition();
             const isolateBtn = tableGroup.findOne('.isolate-btn-group');
-            if (isolateBtn && pointerPos) {
-                const shape = isolateBtn.getIntersection(pointerPos);
-                if (!shape) { // If pointer is not over the button
-                    isolateBtn.visible(false);
-                    this.tablesLayer.batchDraw();
+            if (!isolateBtn) return;
+
+            const pointerPos = this.stage.getPointerPosition();
+            let mouseIsOverButton = false;
+
+            if (pointerPos && isolateBtn.isVisible()) { // Check only if button is visible
+                // Get button's absolute bounding box on the stage
+                const btnRect = isolateBtn.getClientRect({ relativeTo: this.stage });
+
+                if (
+                    pointerPos.x >= btnRect.x &&
+                    pointerPos.x <= btnRect.x + btnRect.width &&
+                    pointerPos.y >= btnRect.y &&
+                    pointerPos.y <= btnRect.y + btnRect.height
+                ) {
+                    mouseIsOverButton = true;
                 }
-            } else if (isolateBtn) { // If pointerPos is null (mouse left canvas)
-                 isolateBtn.visible(false);
-                 this.tablesLayer.batchDraw();
+            }
+
+            if (!mouseIsOverButton) {
+                isolateBtn.visible(false);
+                this.tablesLayer.batchDraw();
             }
         });
 
