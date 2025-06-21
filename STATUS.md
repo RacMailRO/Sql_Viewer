@@ -8,7 +8,7 @@
 - ✅ **Relationship Rendering**: Orthogonal relationship lines between tables
 - ✅ **Colored Table Headers**: Table headers are now colored for better visual distinction
 - ✅ **Drag and Drop**: Table positioning with real-time connection updates
-- ✅ **Auto Layout**: Basic force-directed and grid layout algorithms (critical bug fixed, stability improved, repulsion logic enhanced for better overlap prevention)
+- ✅ **Auto Layout**: Basic force-directed and grid layout algorithms (critical bug fixed, stability improved, repulsion logic tuned for better spacing, orphan tables now grouped separately)
 - ✅ **File Import/Export**: Multiple format support for schema import/export
 
 ### Enhanced Relationship System (Recently Implemented)
@@ -28,6 +28,7 @@
 - ✅ **Enhanced Controls**: Advanced dropdown menus for export and layout management
 - ✅ **Keyboard Shortcuts**: Ctrl+Shift+E (Export), Ctrl+Shift+S (Save), Ctrl+Shift+L (Layouts)
 - ✅ **Notification System**: User feedback for operations
+- ✅ **Properties Panel**: Detailed information display for selected elements (selection functionality restored)
 - ✅ **Loading States**: Visual feedback during operations
 - ✅ **Responsive Design**: Clean, modern interface
 

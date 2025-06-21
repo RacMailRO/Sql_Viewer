@@ -102,10 +102,25 @@ export class PropertiesPanel {
         // Determine element type and call the appropriate method
         // Note: `element.type` might be a more robust way if the schema consistently provides it.
         // For now, duck typing based on properties.
-        if (element.hasOwnProperty('columns') && element.hasOwnProperty('name') && !element.hasOwnProperty('sourceTable')) { // Likely a table
+        if (element.hasOwnProperty('columns') && element.hasOwnProperty('name') && !element.hasOwnProperty('sourceTable') && !element.hasOwnProperty('from')) { // Likely a table
             this.showTableProperties(element);
-        } else if (element.hasOwnProperty('sourceTable') && element.hasOwnProperty('targetTable')) { // Likely a relationship
-            this.showRelationshipProperties(element);
+        } else if (
+            (element.hasOwnProperty('sourceTable') && element.hasOwnProperty('targetTable')) ||
+            (element.hasOwnProperty('from') && element.hasOwnProperty('to') &&
+             typeof element.from === 'object' && element.from !== null && element.from.hasOwnProperty('table') &&
+             typeof element.to === 'object' && element.to !== null && element.to.hasOwnProperty('table'))
+        ) { // Likely a relationship
+            let adaptedElement = element;
+            if (element.hasOwnProperty('from')) { // It's the nested structure, adapt it
+                adaptedElement = {
+                    ...element, // Spread original top-level properties like type, description, onDelete, onUpdate
+                    sourceTable: element.from.table,
+                    sourceColumn: element.from.column,
+                    targetTable: element.to.table,
+                    targetColumn: element.to.column
+                };
+            }
+            this.showRelationshipProperties(adaptedElement);
         } else if (element.hasOwnProperty('table') && element.hasOwnProperty('column') && element.column.hasOwnProperty('name')) { // Likely a column selection event data from ERDApplication
             // The event data for column selection is often { table: tableData, column: columnData }
             // Or if a direct column object is passed, it might have `name` and `type` but not `columns` or `sourceTable`

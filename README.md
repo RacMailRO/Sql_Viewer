@@ -17,7 +17,7 @@ The ERD Generator is a comprehensive, web-based Entity Relationship Diagram visu
 #### **Interactive Visualization**
 - **Drag & Drop**: Real-time table positioning with connection updates
 - **Zoom & Pan**: Smooth viewport navigation with mouse wheel and drag
-- **Auto Layout**: Intelligent table positioning with multiple algorithms (stability improved, overlap handling enhanced)
+- **Auto Layout**: Intelligent table positioning with multiple algorithms (stability improved, overlap handling enhanced, spacing tuned, orphan tables grouped)
 - **Grid Snapping**: Optional grid alignment for precise positioning
 
 #### **Professional Relationship Rendering**
@@ -33,7 +33,7 @@ The ERD Generator is a comprehensive, web-based Entity Relationship Diagram visu
 - **High Resolution**: Vector graphics for print-quality output
 
 #### **Enhanced User Interface**
-- **Properties Panel**: Detailed information display for selected elements
+- **Properties Panel**: Detailed information display for selected elements (functionality restored)
 - **Settings Panel**: Comprehensive configuration options
 - **Search & Filter**: Advanced filtering and table isolation capabilities
 - **Statistical Analysis**: Deep insights into schema quality and patterns
@@ -124,9 +124,13 @@ The application uses a centralized EventBus system for component communication:
 
 ## 🚧 **Current Status & Issues**
 
-### **✅ Auto Layout Overlap Reduction**
-**Status**: ENHANCED
-**Description**: The auto-layout algorithm's repulsion logic has been significantly enhanced to be dimension-aware and actively use the `minTableDistance` setting. This proactively reduces table overlaps during the force-directed layout phase, leading to cleaner initial layouts for complex diagrams.
+### **✅ Properties Panel Functionality**
+**Status**: RESTORED
+**Description**: Fixed an issue where the properties panel would not display information when tables or relationships were clicked. Panel now correctly shows details for selected elements.
+
+### **✅ Auto Layout Enhancements**
+**Status**: IMPROVED
+**Description**: The auto-layout algorithm's repulsion logic has been tuned for more balanced table spacing. Orphaned tables (those without relationships) are now grouped separately at the bottom of the diagram for better clarity. Overlap reduction logic remains enhanced.
 
 ### **✅ Auto Layout Stability**
 **Status**: IMPROVED

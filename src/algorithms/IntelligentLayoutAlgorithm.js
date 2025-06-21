@@ -336,7 +336,7 @@ export class IntelligentLayoutAlgorithm {
                     // This uses a simpler check than full getOverlap for performance in this hot loop.
                     // We are primarily concerned with pushing them apart if their "minimum distance boxes" overlap.
 
-                    const overlapForceStrength = this.settings.repulsionForce * 2; // Stronger force for overlap
+                    const overlapForceStrength = this.settings.repulsionForce * 1.2; // Moderated stronger force for overlap
 
                     // We want to push primarily along the axis of MINIMUM penetration to resolve overlap efficiently
                     // However, for simplicity here, we'll push along both axes if both penetrated.
@@ -372,7 +372,7 @@ export class IntelligentLayoutAlgorithm {
                 } else {
                     // Optionally, add a smaller portion of general repulsion even if specific one was applied
                     const distanceSquared = distance * distance;
-                    const generalRepulsionStrength = this.settings.repulsionForce * 0.1 / (distanceSquared); // Much smaller
+                    const generalRepulsionStrength = this.settings.repulsionForce * 0.25 / (distanceSquared); // Slightly increased residual force
                     fx += (dx / distance) * generalRepulsionStrength;
                     fy += (dy / distance) * generalRepulsionStrength;
                 }
@@ -937,6 +937,116 @@ export class IntelligentLayoutAlgorithm {
             relationships: relationships,
             clusters: this.clusters,
             bounds: this.bounds,
+            statistics: this.generateLayoutStatistics()
+        };
+    }
+
+    /**
+     * Position orphan tables in a separate grid
+     */
+    positionOrphanTables(allTableNames, layoutTables) {
+        const relatedTableNames = new Set();
+        this.relationships.forEach(rel => {
+            relatedTableNames.add(rel.fromTable);
+            relatedTableNames.add(rel.toTable);
+        });
+
+        const orphanTableNames = allTableNames.filter(name => !relatedTableNames.has(name));
+
+        if (orphanTableNames.length === 0) {
+            return; // No orphan tables to position
+        }
+
+        console.log(`Positioning ${orphanTableNames.length} orphan tables.`);
+
+        let maxYOfConnectedGraph = this.settings.boundaryPadding;
+        layoutTables.forEach(table => {
+            if (relatedTableNames.has(table.name)) {
+                maxYOfConnectedGraph = Math.max(maxYOfConnectedGraph, table.y + table.height);
+            }
+        });
+
+        // If all tables are orphans, start from boundaryPadding
+        if (relatedTableNames.size === 0) {
+            maxYOfConnectedGraph = 0; // Will be adjusted by orphanStartY
+        }
+
+
+        const orphanStartY = maxYOfConnectedGraph + this.settings.minTableDistance * 2; // Start orphans below connected graph
+        const orphanGridCols = Math.floor((this.bounds.width - 2 * this.settings.boundaryPadding) / (200 + this.settings.minTableDistance)) || 1; // Assume avg width 200 for orphans
+        let currentOrphanCol = 0;
+        let currentOrphanRow = 0;
+        let maxRowHeightInCurrentOrphanRow = 0;
+
+        orphanTableNames.forEach(tableName => {
+            const tableDim = this.tableDimensions.get(tableName);
+            if (!tableDim) return;
+
+            const newX = this.settings.boundaryPadding + currentOrphanCol * (tableDim.width + this.settings.minTableDistance);
+            const newY = orphanStartY + currentOrphanRow * (maxRowHeightInCurrentOrphanRow + this.settings.minTableDistance);
+
+            // Update position in the main map
+            this.tablePositions.set(tableName, { x: newX, y: newY });
+
+            // Update the layoutTables array directly for consistency if it's used later
+            const layoutTable = layoutTables.find(t => t.name === tableName);
+            if (layoutTable) {
+                layoutTable.x = newX;
+                layoutTable.y = newY;
+            }
+
+            maxRowHeightInCurrentOrphanRow = Math.max(maxRowHeightInCurrentOrphanRow, tableDim.height);
+            currentOrphanCol++;
+            if (currentOrphanCol >= orphanGridCols) {
+                currentOrphanCol = 0;
+                currentOrphanRow++;
+                maxRowHeightInCurrentOrphanRow = 0; // Reset for new row
+            }
+        });
+         // Adjust bounds if orphans extend too far down
+        let totalOrphanHeight = 0;
+        if (orphanTableNames.length > 0) {
+            const lastOrphanName = orphanTableNames[orphanTableNames.length -1];
+            const lastOrphanPos = this.tablePositions.get(lastOrphanName);
+            const lastOrphanDim = this.tableDimensions.get(lastOrphanName);
+            if (lastOrphanPos && lastOrphanDim) {
+                 totalOrphanHeight = lastOrphanPos.y + lastOrphanDim.height + this.settings.boundaryPadding;
+                 this.bounds.height = Math.max(this.bounds.height, totalOrphanHeight);
+            }
+        }
+    }
+
+    /**
+     * Generate final layout result
+     */
+    generateLayoutResult(tables, relationships) {
+        const allTableNames = tables.map(t => t.name);
+        const layoutTables = tables.map(table => ({
+            ...table,
+            x: this.tablePositions.get(table.name)?.x || 0,
+            y: this.tablePositions.get(table.name)?.y || 0,
+            width: this.tableDimensions.get(table.name)?.width || 200,
+            height: this.tableDimensions.get(table.name)?.height || 100
+        }));
+
+        // Position orphan tables after initial layout of all tables
+        this.positionOrphanTables(allTableNames, layoutTables);
+
+        // Re-map positions for layoutTables after orphan positioning,
+        // as positionOrphanTables might have updated this.tablePositions
+        const finalLayoutTables = tables.map(table => ({
+            ...table,
+            x: this.tablePositions.get(table.name)?.x || 0, // Get potentially updated position
+            y: this.tablePositions.get(table.name)?.y || 0, // Get potentially updated position
+            width: this.tableDimensions.get(table.name)?.width || 200,
+            height: this.tableDimensions.get(table.name)?.height || 100
+        }));
+
+        return {
+            tables: finalLayoutTables,
+            relationships: relationships,
+            clusters: this.clusters,
+            bounds: this.bounds, // Bounds might have been updated by orphan placement
             statistics: this.generateLayoutStatistics()
         };
     }
