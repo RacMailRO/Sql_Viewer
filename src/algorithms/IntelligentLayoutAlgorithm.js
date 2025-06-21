@@ -314,11 +314,10 @@ export class IntelligentLayoutAlgorithm {
                 // Calculate minimum required distance
                 const minDistance = this.calculateMinimumDistance(dim1, dim2);
                 
-                // Apply stronger repulsion if tables are too close
-                let repulsionStrength = this.settings.repulsionForce / (distance * distance);
-                if (distance < minDistance) {
-                    repulsionStrength *= 3; // Extra strong repulsion for overlapping
-                }
+                // Standard repulsion force (inverse square law)
+                // The strength (this.settings.repulsionForce) might need tuning.
+                // This force acts between centers.
+                const repulsionStrength = this.settings.repulsionForce / (distanceSquared);
                 
                 const fx = (dx / distance) * repulsionStrength;
                 const fy = (dy / distance) * repulsionStrength;
@@ -335,18 +334,19 @@ export class IntelligentLayoutAlgorithm {
     /**
      * Calculate minimum required distance between two tables
      */
-    calculateMinimumDistance(dim1, dim2) {
-        // Use bounding box approach with minimum spacing
-        const halfWidth1 = dim1.width / 2;
-        const halfHeight1 = dim1.height / 2;
-        const halfWidth2 = dim2.width / 2;
-        const halfHeight2 = dim2.height / 2;
-        
-        return Math.sqrt(
-            Math.pow(halfWidth1 + halfWidth2 + this.settings.minTableDistance, 2) +
-            Math.pow(halfHeight1 + halfHeight2 + this.settings.minTableDistance, 2)
-        );
-    }
+    // This method is no longer used directly by repulsion and separateOverlappingTables uses getOverlap.
+    // calculateMinimumDistance(dim1, dim2) {
+    // // Use bounding box approach with minimum spacing
+    // const halfWidth1 = dim1.width / 2;
+    // const halfHeight1 = dim1.height / 2;
+    // const halfWidth2 = dim2.width / 2;
+    // const halfHeight2 = dim2.height / 2;
+    //
+    // return Math.sqrt(
+    // Math.pow(halfWidth1 + halfWidth2 + this.settings.minTableDistance, 2) +
+    // Math.pow(halfHeight1 + halfHeight2 + this.settings.minTableDistance, 2)
+    // );
+    // }
 
     /**
      * Calculate attraction forces from relationships
@@ -510,53 +510,118 @@ export class IntelligentLayoutAlgorithm {
     /**
      * Check if two tables overlap
      */
-    tablesOverlap(table1, table2) {
-        const pos1 = this.tablePositions.get(table1);
-        const pos2 = this.tablePositions.get(table2);
-        const dim1 = this.tableDimensions.get(table1);
-        const dim2 = this.tableDimensions.get(table2);
+    getOverlap(pos1, dim1, pos2, dim2, desiredMargin) {
+        const center1X = pos1.x + dim1.width / 2;
+        const center1Y = pos1.y + dim1.height / 2;
+        const center2X = pos2.x + dim2.width / 2;
+        const center2Y = pos2.y + dim2.height / 2;
+
+        const dx = Math.abs(center1X - center2X);
+        const dy = Math.abs(center1Y - center2Y);
+
+        const minSeparationX = dim1.width / 2 + dim2.width / 2 + desiredMargin;
+        const minSeparationY = dim1.height / 2 + dim2.height / 2 + desiredMargin;
+
+        return {
+            x: minSeparationX - dx, // Positive if overlapping in X (penetration depth)
+            y: minSeparationY - dy  // Positive if overlapping in Y (penetration depth)
+        };
+    }
+
+    tablesOverlap(table1Name, table2Name) {
+        const pos1 = this.tablePositions.get(table1Name);
+        const pos2 = this.tablePositions.get(table2Name);
+        const dim1 = this.tableDimensions.get(table1Name);
+        const dim2 = this.tableDimensions.get(table2Name);
         
-        const margin = this.settings.minTableDistance;
-        
-        return !(pos1.x + dim1.width + margin <= pos2.x ||
-                pos2.x + dim2.width + margin <= pos1.x ||
-                pos1.y + dim1.height + margin <= pos2.y ||
-                pos2.y + dim2.height + margin <= pos1.y);
+        const overlap = this.getOverlap(pos1, dim1, pos2, dim2, this.settings.minTableDistance);
+        return overlap.x > 0 && overlap.y > 0;
     }
 
     /**
      * Separate overlapping tables
      */
-    separateOverlappingTables(table1, table2) {
-        const pos1 = this.tablePositions.get(table1);
-        const pos2 = this.tablePositions.get(table2);
-        const dim1 = this.tableDimensions.get(table1);
-        const dim2 = this.tableDimensions.get(table2);
-        
-        const center1X = pos1.x + dim1.width / 2;
-        const center1Y = pos1.y + dim1.height / 2;
-        const center2X = pos2.x + dim2.width / 2;
-        const center2Y = pos2.y + dim2.height / 2;
-        
-        const dx = center2X - center1X;
-        const dy = center2Y - center1Y;
-        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-        
-        const minDistance = this.calculateMinimumDistance(dim1, dim2);
-        const separation = (minDistance - distance) / 2;
-        
-        const unitX = dx / distance;
-        const unitY = dy / distance;
-        
-        // Move tables apart
-        pos1.x -= unitX * separation;
-        pos1.y -= unitY * separation;
-        pos2.x += unitX * separation;
-        pos2.y += unitY * separation;
-        
-        // Ensure tables stay within bounds
-        this.constrainToBounds(table1);
-        this.constrainToBounds(table2);
+    separateOverlappingTables(table1Name, table2Name) {
+        const pos1 = this.tablePositions.get(table1Name);
+        const pos2 = this.tablePositions.get(table2Name);
+        const dim1 = this.tableDimensions.get(table1Name);
+        const dim2 = this.tableDimensions.get(table2Name);
+
+        const overlap = this.getOverlap(pos1, dim1, pos2, dim2, this.settings.minTableDistance);
+
+        // This check is technically redundant if called from resolveRemainingOverlaps where tablesOverlap is true,
+        // but good for direct calls or if minTableDistance is zero.
+        if (overlap.x > 0 || overlap.y > 0) { // If there's any overlap (even if just touching with zero margin)
+            const center1X = pos1.x + dim1.width / 2;
+            const center1Y = pos1.y + dim1.height / 2;
+            const center2X = pos2.x + dim2.width / 2;
+            const center2Y = pos2.y + dim2.height / 2;
+
+            let pushX1 = 0, pushY1 = 0, pushX2 = 0, pushY2 = 0;
+
+            // Resolve X overlap
+            if (overlap.x > 0) {
+                const sign = (center1X < center2X) ? -1 : 1;
+                pushX1 = sign * overlap.x / 2;
+                pushX2 = -sign * overlap.x / 2;
+            }
+
+            // Resolve Y overlap
+            if (overlap.y > 0) {
+                const sign = (center1Y < center2Y) ? -1 : 1;
+                pushY1 = sign * overlap.y / 2;
+                pushY2 = -sign * overlap.y / 2;
+            }
+
+            // Prefer pushing along the axis of MINIMUM actual penetration to "escape" more easily
+            // This helps prevent oscillations when pushed against other objects.
+            // Note: overlap.x/y here are penetration depths including the margin.
+            // For actual geometric overlap, we'd use margin = 0 in getOverlap.
+            const geometricOverlap = this.getOverlap(pos1, dim1, pos2, dim2, 0);
+
+            if (geometricOverlap.x > 0 && geometricOverlap.y > 0) { // Only apply axis preference if truly overlapping
+                if (geometricOverlap.x < geometricOverlap.y) { // Less overlap in X, prioritize pushing in X
+                    pos1.x += pushX1;
+                    pos2.x += pushX2;
+                    // Re-evaluate Y push based on new X positions
+                    const tempOverlapY = this.getOverlap(pos1, dim1, pos2, dim2, this.settings.minTableDistance).y;
+                    if (tempOverlapY > 0) {
+                        const signY = (pos1.y + dim1.height/2 < pos2.y + dim2.height/2) ? -1 : 1;
+                        pos1.y += signY * tempOverlapY / 2;
+                        pos2.y -= signY * tempOverlapY / 2;
+                    }
+                } else { // Less or equal overlap in Y (or X is not overlapping), prioritize pushing in Y
+                    pos1.y += pushY1;
+                    pos2.y += pushY2;
+                     // Re-evaluate X push based on new Y positions
+                    const tempOverlapX = this.getOverlap(pos1, dim1, pos2, dim2, this.settings.minTableDistance).x;
+                    if (tempOverlapX > 0) {
+                        const signX = (pos1.x + dim1.width/2 < pos2.x + dim2.width/2) ? -1 : 1;
+                        pos1.x += signX * tempOverlapX / 2;
+                        pos2.x -= signX * tempOverlapX / 2;
+                    }
+                }
+            } else if (geometricOverlap.x > 0) { // Only X overlap
+                pos1.x += pushX1;
+                pos2.x += pushX2;
+            } else if (geometricOverlap.y > 0) { // Only Y overlap
+                pos1.y += pushY1;
+                pos2.y += pushY2;
+            } else { // No geometric overlap, just margin violation. Push along combined vector.
+                 const dx = center2X - center1X;
+                 const dy = center2Y - center1Y;
+                 const distance = Math.sqrt(dx*dx + dy*dy) || 1;
+                 const totalPushNeeded = Math.max(overlap.x > 0 ? overlap.x : 0, overlap.y > 0 ? overlap.y : 0); // Simplified
+                 if (totalPushNeeded > 0) {
+                    pos1.x -= (dx / distance) * totalPushNeeded / 2;
+                    pos1.y -= (dy / distance) * totalPushNeeded / 2;
+                    pos2.x += (dx / distance) * totalPushNeeded / 2;
+                    pos2.y += (dy / distance) * totalPushNeeded / 2;
+                 }
+            }
+            this.constrainToBounds(table1Name);
+            this.constrainToBounds(table2Name);
+        }
     }
 
     /**
