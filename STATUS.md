@@ -8,7 +8,7 @@
 - ✅ **Relationship Rendering**: Orthogonal relationship lines between tables
 - ✅ **Colored Table Headers**: Table headers are now colored for better visual distinction
 - ✅ **Drag and Drop**: Table positioning with real-time connection updates
-- ✅ **Auto Layout**: Basic force-directed and grid layout algorithms (critical bug fixed, stability improved)
+- ✅ **Auto Layout**: Basic force-directed and grid layout algorithms (critical bug fixed, stability improved, repulsion logic enhanced for better overlap prevention)
 - ✅ **File Import/Export**: Multiple format support for schema import/export
 
 ### Enhanced Relationship System (Recently Implemented)

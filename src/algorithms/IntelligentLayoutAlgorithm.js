@@ -311,14 +311,71 @@ export class IntelligentLayoutAlgorithm {
                 const dy = (pos2.y + dim2.height / 2) - (pos1.y + dim1.height / 2);
                 const distance = Math.sqrt(dx * dx + dy * dy) || 1;
                 
+                let fx = 0;
+                let fy = 0;
+
+                // New: Dimension-aware repulsion if tables are too close (violating minTableDistance)
+                const center1X = pos1.x + dim1.width / 2;
+                const center1Y = pos1.y + dim1.height / 2;
+                const center2X = pos2.x + dim2.width / 2;
+                const center2Y = pos2.y + dim2.height / 2;
+
+                const actualDxBetweenCenters = Math.abs(center1X - center2X);
+                const actualDyBetweenCenters = Math.abs(center1Y - center2Y);
+
+                const minSeparationX = dim1.width / 2 + dim2.width / 2 + this.settings.minTableDistance;
+                const minSeparationY = dim1.height / 2 + dim2.height / 2 + this.settings.minTableDistance;
+
+                const penetrationX = minSeparationX - actualDxBetweenCenters;
+                const penetrationY = minSeparationY - actualDyBetweenCenters;
+
+                let specificRepulsionApplied = false;
+                if (penetrationX > 0 && penetrationY > 0) { // Check if centers are within the "too close" box
+                    // Only apply if the bounding boxes (plus margin) are actually overlapping,
+                    // not just if their center-to-center distance along one axis is small.
+                    // This uses a simpler check than full getOverlap for performance in this hot loop.
+                    // We are primarily concerned with pushing them apart if their "minimum distance boxes" overlap.
+
+                    const overlapForceStrength = this.settings.repulsionForce * 2; // Stronger force for overlap
+
+                    // We want to push primarily along the axis of MINIMUM penetration to resolve overlap efficiently
+                    // However, for simplicity here, we'll push along both axes if both penetrated.
+                    // More sophisticated logic (like in separateOverlappingTables) could be used but adds complexity here.
+
+                    // Calculate push based on how much they *need* to move to satisfy minDistance along each axis
+                    // if their bounding boxes (plus margin) are indeed overlapping.
+                    // This is a simplified check: if centers are too close AND they are also too close considering their full widths/heights
+
+                    const agent_comment = `
+                    The condition (penetrationX > 0 && penetrationY > 0) checks if the *centers* are too close
+                    such that their *minimum separation boxes* (table_half_dim + minDistance) overlap.
+                    If this is true, it means the tables are definitely closer than desired.
+                    We then apply a force to push them apart.
+                    The direction of the force is based on the vector connecting their centers (dx, dy).
+                    The magnitude is boosted.
+                    `;
+
+                    const forceMagnitude = overlapForceStrength * Math.max(penetrationX, penetrationY) / distance; // Normalize by distance
+                    fx += (dx / distance) * forceMagnitude;
+                    fy += (dy / distance) * forceMagnitude;
+                    specificRepulsionApplied = true;
+                }
+
                 // Standard repulsion force (inverse square law)
-                // The strength (this.settings.repulsionForce) might need tuning.
                 // This force acts between centers.
-                const distanceSquared = distance * distance;
-                const repulsionStrength = this.settings.repulsionForce / (distanceSquared);
-                
-                const fx = (dx / distance) * repulsionStrength;
-                const fy = (dy / distance) * repulsionStrength;
+                // Apply it if specific overlap repulsion wasn't strong enough or they aren't overlapping but still close.
+                if (!specificRepulsionApplied) {
+                    const distanceSquared = distance * distance;
+                    const generalRepulsionStrength = this.settings.repulsionForce / (distanceSquared);
+                    fx += (dx / distance) * generalRepulsionStrength;
+                    fy += (dy / distance) * generalRepulsionStrength;
+                } else {
+                    // Optionally, add a smaller portion of general repulsion even if specific one was applied
+                    const distanceSquared = distance * distance;
+                    const generalRepulsionStrength = this.settings.repulsionForce * 0.1 / (distanceSquared); // Much smaller
+                    fx += (dx / distance) * generalRepulsionStrength;
+                    fy += (dy / distance) * generalRepulsionStrength;
+                }
                 
                 // Apply forces
                 this.forces.get(table1).x -= fx;
