@@ -740,6 +740,16 @@ export class ERDApplication {
                 layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
             }
 
+
+            console.log('Applying layout:', layout); // See what the layout object looks like
+
+            // Check if it's valid before proceeding
+            if (!layout) {
+                console.error("Layout calculation failed, returned undefined. Aborting layout update.");
+                this.hideLoading();
+                return; // Exit the function gracefully
+            }
+
             this.diagramState.setLayout(layout);
             this.renderer.updateLayout(layout); // This should re-render tables and connections
             
@@ -756,8 +766,8 @@ export class ERDApplication {
             }
 
           
-            const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
-            this.showLayoutStats(stats);
+            // const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
+            // this.showLayoutStats(stats);
             
         } catch (error) {
             console.error('Auto layout error:', error);
