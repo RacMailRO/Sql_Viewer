@@ -31,6 +31,7 @@ export class KonvaERDRenderer {
         this.currentLayout = null;
         this.selectedTable = null;
         this.hoveredTable = null;
+        this.searchHighlightShape = null; // For highlighting search results
         this.initialized = false;
 
         // Object pools for performance
@@ -66,6 +67,14 @@ export class KonvaERDRenderer {
                 stroke: '#2563eb',
                 strokeWidth: 2,
                 dash: [5, 5]
+        },
+        searchHighlight: {
+            stroke: '#f59e0b', // Amber color
+            strokeWidth: 3,
+            dash: [10, 5],
+            opacity: 0.8,
+            cornerRadius: 5,
+            animationDuration: 0.3 // seconds
             }
         };
     }
@@ -1169,5 +1178,125 @@ export class KonvaERDRenderer {
         this.tableGroups.clear();
         this.connectionLines.clear();
         this.initialized = false;
+    }
+
+    /**
+     * Navigate to and highlight an element on the canvas.
+     * @param {Object} navigationData - Data about the element to navigate to.
+     *                                 Expected to have `type` ('table' or 'column')
+     *                                 and `target` (the search result object).
+     */
+    navigateToElement(navigationData) {
+        if (!navigationData || !navigationData.target) {
+            console.warn('[KonvaERDRenderer] Invalid navigation data received.', navigationData);
+            return;
+        }
+
+        const targetItem = navigationData.target;
+        let konvaElement = null;
+        let elementBounds = null;
+
+        this.clearSearchHighlight(); // Clear previous highlight first
+
+        if (targetItem.type === 'table') {
+            konvaElement = this.tableGroups.get(targetItem.name);
+            if (konvaElement) {
+                elementBounds = konvaElement.getClientRect();
+            }
+        } else if (targetItem.type === 'column') {
+            const tableGroup = this.tableGroups.get(targetItem.table);
+            if (tableGroup) {
+                // Find the visual representation of the column.
+                // This assumes column backgrounds store 'columnData' as an attribute.
+                const columnShape = tableGroup.findOne((node) => {
+                    return node.name() === 'column-background' && node.getAttr('columnData')?.name === targetItem.name;
+                });
+                if (columnShape) {
+                    konvaElement = columnShape; // For focusing, we might focus the table, then highlight column
+                    // Get bounds relative to the stage
+                    const columnRect = columnShape.getClientRect({ relativeTo: tableGroup });
+                    elementBounds = {
+                        x: tableGroup.x() + columnRect.x,
+                        y: tableGroup.y() + columnRect.y,
+                        width: columnRect.width,
+                        height: columnRect.height,
+                    };
+                } else {
+                     // Fallback to table if specific column visual not found
+                    konvaElement = tableGroup;
+                    elementBounds = tableGroup.getClientRect();
+                }
+            }
+        } else if (targetItem.type === 'relationship') {
+            // Find relationship
+            const relKey = `${targetItem.fromTable}-${targetItem.fromColumn || targetItem.data.from.column}-${targetItem.toTable}-${targetItem.toColumn || targetItem.data.to.column}`;
+            konvaElement = this.connectionLines.get(relKey);
+             if (konvaElement) {
+                elementBounds = konvaElement.getClientRect();
+            }
+        }
+
+
+        if (!konvaElement && !elementBounds) {
+            console.warn(`[KonvaERDRenderer] Element not found for search result:`, targetItem);
+            return;
+        }
+
+        // If only elementBounds is available (e.g. for column), use that. Otherwise, use konvaElement's bounds.
+        const finalBounds = elementBounds || konvaElement.getClientRect();
+
+        // 1. Pan and Zoom to the element
+        const scale = Math.min(this.stage.width() / (finalBounds.width + 100), this.stage.height() / (finalBounds.height + 100), 1.5); // Add padding, cap zoom
+
+        this.stage.to({
+            x: -finalBounds.x * scale + this.stage.width() / 2 - (finalBounds.width * scale / 2),
+            y: -finalBounds.y * scale + this.stage.height() / 2 - (finalBounds.height * scale / 2),
+            scaleX: scale,
+            scaleY: scale,
+            duration: this.styles.searchHighlight.animationDuration, // Use animation duration from styles
+            onFinish: () => {
+                if (this.eventBus) {
+                    this.eventBus.emit('zoom:changed', scale);
+                }
+            }
+        });
+
+
+        // 2. Highlight the element
+        if (navigationData.highlight) {
+            this.searchHighlightShape = new Konva.Rect({
+                x: finalBounds.x,
+                y: finalBounds.y,
+                width: finalBounds.width,
+                height: finalBounds.height,
+                stroke: this.styles.searchHighlight.stroke,
+                strokeWidth: this.styles.searchHighlight.strokeWidth,
+                dash: this.styles.searchHighlight.dash,
+                opacity: this.styles.searchHighlight.opacity,
+                cornerRadius: this.styles.searchHighlight.cornerRadius,
+                listening: false, // Don't let it interfere with mouse events
+            });
+            this.uiLayer.add(this.searchHighlightShape);
+            this.uiLayer.batchDraw(); // Use batchDraw for efficiency
+        }
+         // Also select the table in the properties panel if it's a table or column
+        if (targetItem.type === 'table' && this.eventBus) {
+            this.eventBus.emit('table:selected', targetItem.data);
+        } else if (targetItem.type === 'column' && this.eventBus) {
+            this.eventBus.emit('column:selected', { table: targetItem.data.table, column: targetItem.data.column });
+        } else if (targetItem.type === 'relationship' && this.eventBus) {
+            this.eventBus.emit('relationship:selected', targetItem.data);
+        }
+    }
+
+    /**
+     * Clears any visual highlight applied for search results.
+     */
+    clearSearchHighlight() {
+        if (this.searchHighlightShape) {
+            this.searchHighlightShape.destroy();
+            this.searchHighlightShape = null;
+            this.uiLayer.batchDraw();
+        }
     }
 }

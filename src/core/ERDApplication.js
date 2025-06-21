@@ -43,6 +43,65 @@ export class ERDApplication {
     }
 
     /**
+     * Handle schema filtered event
+     * @param {Object} filteredSchema - The filtered schema data
+     */
+    handleSchemaFiltered(filteredSchema) {
+        try {
+            this.showLoading('Applying filters...');
+
+            // Update the schema model with the filtered data
+            // This might internally emit 'schema:loaded' if SchemaModel is designed that way,
+            // or we might need to call a more direct update if available.
+            // For now, assume loadSchema also updates and can be used here.
+            this.schemaModel.loadSchema(filteredSchema);
+
+            // The rest is similar to handleSchemaLoaded but uses the filteredSchema directly
+            const schemaForLayout = {
+                ...filteredSchema,
+                relationships: filteredSchema.relationships.map(r => ({
+                    sourceTable: r.from.table,
+                    sourceColumn: r.from.column,
+                    targetTable: r.to.table,
+                    targetColumn: r.to.column,
+                    type: r.type
+                }))
+            };
+
+            const layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
+            this.diagramState.setLayout(layout);
+            this.renderer.render(filteredSchema, layout);
+
+            // Update UI elements like table counts
+            this.updateUI();
+
+            console.log('Schema filtered and re-rendered successfully:', filteredSchema);
+
+            // Optionally, re-apply auto-layout and reset zoom for the new filtered view
+            setTimeout(() => {
+                try {
+                    this.applyAutoLayout(); // This will use the current (filtered) schema
+                    setTimeout(() => {
+                        try {
+                            this.resetZoom();
+                        } catch (resetError) {
+                            console.error('Reset zoom error after filtering:', resetError);
+                        }
+                    }, 100);
+                } catch (layoutError) {
+                    console.error('Auto layout error after filtering:', layoutError);
+                }
+            }, 100);
+
+        } catch (error) {
+            console.error('Error handling schema filter:', error);
+            this.showError('Failed to apply filters and re-render schema');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    /**
      * Initialize the application
      */
     async initialize() {
@@ -260,12 +319,34 @@ export class ERDApplication {
             this.handleRelationshipSelected(relationship);
         });
 
+        this.eventBus.on('column:selected', (data) => {
+            this.handleColumnSelected(data);
+        });
+
         this.eventBus.on('diagram:changed', () => {
             this.updateUI();
         });
 
         this.eventBus.on('zoom:changed', (zoomLevel) => {
             this.updateZoomLevel(zoomLevel);
+        });
+
+        // Search navigation events
+        this.eventBus.on('search:navigate', (eventData) => {
+            if (this.renderer) {
+                this.renderer.navigateToElement(eventData);
+            }
+        });
+
+        this.eventBus.on('search:clearHighlight', () => {
+            if (this.renderer) {
+                this.renderer.clearSearchHighlight();
+            }
+        });
+
+        // Filtering events
+        this.eventBus.on('schema:filtered', (filteredSchema) => {
+            this.handleSchemaFiltered(filteredSchema);
         });
 
         // Close modal when clicking outside
@@ -538,6 +619,15 @@ export class ERDApplication {
     handleRelationshipSelected(relationship) {
         this.diagramState.setSelectedElement(relationship);
         this.showPropertyPanel(relationship);
+    }
+
+    /**
+     * Handle column selection
+     * @param {Object} data - Selected column data ({ table: tableData, column: columnData })
+     */
+    handleColumnSelected(data) {
+        this.diagramState.setSelectedElement(data.column); // Store the actual column as selected
+        this.showPropertyPanel(data); // Pass the composite object for the panel to decide
     }
 
     /**
