@@ -696,16 +696,16 @@ export class ERDApplication {
                 this.hideLoading();
                 return;
             }
-            const schemaForLayout = {
-                ...schema,
-                relationships: schema.relationships.map(r => ({
-                    sourceTable: r.from.table,
-                    sourceColumn: r.from.column,
-                    targetTable: r.to.table,
-                    targetColumn: r.to.column,
-                    type: r.type
-                }))
-            };
+            // const schemaForLayout = {
+            //     ...schema,
+            //     relationships: schema.relationships.map(r => ({
+            //         sourceTable: r.from.table,
+            //         sourceColumn: r.from.column,
+            //         targetTable: r.to.table,
+            //         targetColumn: r.to.column,
+            //         type: r.type
+            //     }))
+            // };
 
             let layout;
             if (this.intelligentLayoutAlgorithm) {
@@ -736,10 +736,7 @@ export class ERDApplication {
                 this.showLayoutStats(stats);
             }
 
-            const bounds = {
-                width: this.renderer.stage.width(),
-                height: this.renderer.stage.height()
-            };
+          
             const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
             this.showLayoutStats(stats);
             
