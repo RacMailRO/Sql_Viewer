@@ -17,7 +17,7 @@ The ERD Generator is a comprehensive, web-based Entity Relationship Diagram visu
 #### **Interactive Visualization**
 - **Drag & Drop**: Real-time table positioning with connection updates
 - **Zoom & Pan**: Smooth viewport navigation with mouse wheel and drag
-- **Auto Layout**: Intelligent table positioning with multiple algorithms
+- **Auto Layout**: Intelligent table positioning with multiple algorithms (stability improved)
 - **Grid Snapping**: Optional grid alignment for precise positioning
 
 #### **Professional Relationship Rendering**
@@ -123,6 +123,10 @@ The application uses a centralized EventBus system for component communication:
 - **Export Events**: Generate and download various formats
 
 ## 🚧 **Current Status & Issues**
+
+### **✅ Auto Layout Stability**
+**Status**: IMPROVED
+**Description**: A critical bug in the auto-layout algorithm (`TypeError: this.calculateMinimumDistance is not a function`) has been resolved, leading to improved stability of the layout generation.
 
 ### **✅ Table Drag Behavior**
 **Status**: RESOLVED

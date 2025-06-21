@@ -311,12 +311,10 @@ export class IntelligentLayoutAlgorithm {
                 const dy = (pos2.y + dim2.height / 2) - (pos1.y + dim1.height / 2);
                 const distance = Math.sqrt(dx * dx + dy * dy) || 1;
                 
-                // Calculate minimum required distance
-                const minDistance = this.calculateMinimumDistance(dim1, dim2);
-                
                 // Standard repulsion force (inverse square law)
                 // The strength (this.settings.repulsionForce) might need tuning.
                 // This force acts between centers.
+                const distanceSquared = distance * distance;
                 const repulsionStrength = this.settings.repulsionForce / (distanceSquared);
                 
                 const fx = (dx / distance) * repulsionStrength;
@@ -330,23 +328,6 @@ export class IntelligentLayoutAlgorithm {
             }
         }
     }
-
-    /**
-     * Calculate minimum required distance between two tables
-     */
-    // This method is no longer used directly by repulsion and separateOverlappingTables uses getOverlap.
-    // calculateMinimumDistance(dim1, dim2) {
-    // // Use bounding box approach with minimum spacing
-    // const halfWidth1 = dim1.width / 2;
-    // const halfHeight1 = dim1.height / 2;
-    // const halfWidth2 = dim2.width / 2;
-    // const halfHeight2 = dim2.height / 2;
-    //
-    // return Math.sqrt(
-    // Math.pow(halfWidth1 + halfWidth2 + this.settings.minTableDistance, 2) +
-    // Math.pow(halfHeight1 + halfHeight2 + this.settings.minTableDistance, 2)
-    // );
-    // }
 
     /**
      * Calculate attraction forces from relationships
