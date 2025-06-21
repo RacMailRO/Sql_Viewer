@@ -170,6 +170,11 @@ export class ERDApplication {
 
             exitIsolationBtn: document.getElementById('exit-isolation-btn'),
 
+            // Toolbar buttons for search and filter
+            searchBtn: document.getElementById('search-btn'),
+            filterBtn: document.getElementById('filter-btn'),
+
+
             // Settings panel elements
             settingsBtn: document.getElementById('settings-btn'),
             settingsPanel: document.getElementById('settings-panel'),
@@ -710,9 +715,23 @@ export class ERDApplication {
             let layout;
             if (this.intelligentLayoutAlgorithm) {
                 this.intelligentLayoutAlgorithm.updateSettings(this.settings); // Pass current app settings
+
+                let canvasWidth = this.elements.canvas.clientWidth || this.renderer.stage.width();
+                let canvasHeight = this.elements.canvas.clientHeight || this.renderer.stage.height();
+
+                if (!canvasWidth || canvasWidth < 100) { // Ensure minimum dimensions
+                    canvasWidth = 800;
+                    console.warn("Canvas width was too small or zero for layout, defaulted to 800.");
+                }
+                if (!canvasHeight || canvasHeight < 100) { // Ensure minimum dimensions
+                    canvasHeight = 600;
+                    console.warn("Canvas height was too small or zero for layout, defaulted to 600.");
+                }
+
                 const canvasBounds = {
-                    width: this.elements.canvas.clientWidth || this.renderer.stage.width(),
-                    height: this.elements.canvas.clientHeight || this.renderer.stage.height()
+                    width: canvasWidth,
+                    height: canvasHeight
+
                 };
                 layout = this.intelligentLayoutAlgorithm.calculateLayout(schemaForLayout, canvasBounds);
             } else {
