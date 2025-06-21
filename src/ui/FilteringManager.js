@@ -64,6 +64,7 @@ export class FilteringManager {
             type: 'isolation', // Consistent type for isolation filters
             name: `Isolated: ${tableName}`,
             description: `Showing table "${tableName}" and its direct connections.`,
+
             // The 'data' parameter to apply is the current schema being filtered.
             // However, for this specific isolation, we always start from originalData.
             apply: (data) => {
