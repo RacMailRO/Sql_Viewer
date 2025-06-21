@@ -167,7 +167,15 @@ export class ERDApplication {
             tooltip: document.getElementById('tooltip'),
 
             // New button
-            exitIsolationBtn: document.getElementById('exit-isolation-btn')
+
+            exitIsolationBtn: document.getElementById('exit-isolation-btn'),
+
+            // Settings panel elements
+            settingsBtn: document.getElementById('settings-btn'),
+            settingsPanel: document.getElementById('settings-panel'),
+            settingsOverlay: document.getElementById('settings-overlay'),
+            closeSettingsBtn: document.getElementById('close-settings-btn')
+
         };
 
         // Validate required elements
@@ -373,43 +381,41 @@ export class ERDApplication {
         });
         
         // Toolbar button events
-        const searchBtn = document.getElementById('search-btn');
-        if (searchBtn) {
-            searchBtn.addEventListener('click', () => {
+        if (this.elements.searchBtn) {
+            this.elements.searchBtn.addEventListener('click', () => {
                 if (this.searchManager) {
                     this.searchManager.show();
                 }
             });
         }
         
-        const filterBtn = document.getElementById('filter-btn');
-        if (filterBtn) {
-            filterBtn.addEventListener('click', () => {
+        if (this.elements.filterBtn) {
+            this.elements.filterBtn.addEventListener('click', () => {
                 if (this.filteringManager) {
                     this.filteringManager.toggle();
                 }
             });
         }
         
-        const settingsBtn = document.getElementById('settings-btn');
-        if (settingsBtn) {
-            settingsBtn.addEventListener('click', () => {
+        if (this.elements.settingsBtn) {
+            this.elements.settingsBtn.addEventListener('click', () => {
                 this.showSettings();
             });
         }
         
         // Settings panel events
-        const closeSettingsBtn = document.getElementById('close-settings-btn');
-        if (closeSettingsBtn) {
-            closeSettingsBtn.addEventListener('click', () => {
+        if (this.elements.closeSettingsBtn) {
+            this.elements.closeSettingsBtn.addEventListener('click', () => {
                 this.hideSettings();
             });
         }
         
-        const settingsOverlay = document.getElementById('settings-overlay');
-        if (settingsOverlay) {
-            settingsOverlay.addEventListener('click', () => {
-                this.hideSettings();
+        if (this.elements.settingsOverlay) {
+            this.elements.settingsOverlay.addEventListener('click', (event) => {
+                // Hide only if clicking on the overlay itself, not its children (the panel)
+                if (event.target === this.elements.settingsOverlay) {
+                    this.hideSettings();
+                }
             });
         }
         
@@ -809,9 +815,11 @@ export class ERDApplication {
      * Show settings panel
      */
     showSettings() {
-        const settingsOverlay = document.getElementById('settings-overlay');
-        if (settingsOverlay) {
-            settingsOverlay.style.display = 'flex';
+        if (this.elements.settingsPanel && this.elements.settingsOverlay) {
+            this.elements.settingsOverlay.style.display = 'block'; // Or 'flex' based on its CSS
+            this.elements.settingsPanel.style.display = 'block'; // Or 'flex'
+            // Add class for transition if CSS uses it e.g. panel.classList.add('visible')
+            // Assuming CSS handles visibility primarily via display for now, matching index.html's inline style
         }
     }
 
@@ -819,9 +827,10 @@ export class ERDApplication {
      * Hide settings panel
      */
     hideSettings() {
-        const settingsOverlay = document.getElementById('settings-overlay');
-        if (settingsOverlay) {
-            settingsOverlay.style.display = 'none';
+        if (this.elements.settingsPanel && this.elements.settingsOverlay) {
+            this.elements.settingsOverlay.style.display = 'none';
+            this.elements.settingsPanel.style.display = 'none';
+            // Remove class for transition if CSS uses it e.g. panel.classList.remove('visible')
         }
     }
 
