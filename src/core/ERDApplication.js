@@ -164,7 +164,10 @@ export class ERDApplication {
             relationshipCount: document.getElementById('relationship-count'),
             
             // Tooltip
-            tooltip: document.getElementById('tooltip')
+            tooltip: document.getElementById('tooltip'),
+
+            // New button
+            exitIsolationBtn: document.getElementById('exit-isolation-btn')
         };
 
         // Validate required elements
@@ -347,7 +350,20 @@ export class ERDApplication {
         // Filtering events
         this.eventBus.on('schema:filtered', (filteredSchema) => {
             this.handleSchemaFiltered(filteredSchema);
+            this.updateExitIsolationButtonVisibility();
         });
+
+        this.eventBus.on('table:isolate', (tableData) => {
+            this.handleTableIsolate(tableData);
+        });
+
+        if (this.elements.exitIsolationBtn) {
+            this.elements.exitIsolationBtn.addEventListener('click', () => {
+                if (this.filteringManager) {
+                    this.filteringManager.clearAllFilters(); // This should reset isolation and trigger a schema:filtered event
+                }
+            });
+        }
 
         // Close modal when clicking outside
         this.elements.exportDialog.addEventListener('click', (event) => {
@@ -537,6 +553,7 @@ export class ERDApplication {
         try {
             // Hide welcome message
             this.hideWelcomeMessage();
+            this.updateExitIsolationButtonVisibility(); // Update button state on new schema load
             
             const schemaForLayout = {
                 ...schema,
@@ -628,6 +645,20 @@ export class ERDApplication {
     handleColumnSelected(data) {
         this.diagramState.setSelectedElement(data.column); // Store the actual column as selected
         this.showPropertyPanel(data); // Pass the composite object for the panel to decide
+    }
+
+    /**
+     * Handle request to isolate a single table and its direct connections.
+     * @param {Object} tableData - The data of the table to isolate.
+     */
+    handleTableIsolate(tableData) {
+        if (this.filteringManager && tableData && tableData.name) {
+            this.filteringManager.isolateSingleTable(tableData.name);
+            // The filteringManager will emit 'schema:filtered', which ERDApplication handles
+            // to re-render and update UI components like the exit isolation button.
+        } else {
+            console.warn('Could not isolate table:', tableData);
+        }
     }
 
     /**
@@ -884,5 +915,18 @@ export class ERDApplication {
             this.layoutManager.destroy();
         }
         // Remove event listeners, etc.
+    }
+
+    /**
+     * Updates the visibility of the 'Exit Isolation Mode' button.
+     */
+    updateExitIsolationButtonVisibility() {
+        if (this.elements.exitIsolationBtn && this.filteringManager) {
+            const isActive = this.filteringManager.isolationMode;
+            this.elements.exitIsolationBtn.style.display = isActive ? 'inline-flex' : 'none';
+        } else if (this.elements.exitIsolationBtn) {
+            // Ensure it's hidden if filteringManager is not available
+            this.elements.exitIsolationBtn.style.display = 'none';
+        }
     }
 }

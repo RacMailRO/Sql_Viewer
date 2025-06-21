@@ -42,6 +42,17 @@
   border-color: var(--border-hover);
 }
 
+.btn-warning {
+  background-color: var(--warning-color, #f59e0b); /* Amber 600 */
+  color: white;
+  border-color: var(--warning-color, #f59e0b);
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: var(--warning-hover, #d97706); /* Amber 700 */
+  border-color: var(--warning-hover, #d97706);
+}
+
 .btn .icon {
   font-size: 1rem;
   line-height: 1;
