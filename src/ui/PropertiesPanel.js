@@ -77,13 +77,46 @@ export class PropertiesPanel {
     setupEventListeners() {
         if (this.eventBus) {
             // Listen for selection events
-            this.eventBus.on('table:click', (data) => this.showTableProperties(data));
-            this.eventBus.on('column:click', (data) => this.showColumnProperties(data));
-            this.eventBus.on('connection:click', (data) => this.showRelationshipProperties(data));
+            // These are now handled by ERDApplication calling the generic `render` method
+            // this.eventBus.on('table:click', (data) => this.showTableProperties(data));
+            // this.eventBus.on('column:click', (data) => this.showColumnProperties(data));
+            // this.eventBus.on('connection:click', (data) => this.showRelationshipProperties(data));
             
             // Listen for hover events (optional preview)
             this.eventBus.on('table:hover', (data) => this.previewTableInfo(data));
             this.eventBus.on('connection:hover', (data) => this.previewRelationshipInfo(data));
+        }
+    }
+
+    /**
+     * Generic render method to display properties based on element type.
+     * @param {Object} element - The selected element (table, column, or relationship)
+     */
+    render(element) {
+        if (!element) {
+            this.updateContent('<div class="panel-placeholder"><div class="placeholder-icon">ℹ️</div><div class="placeholder-text">No element selected.</div></div>');
+            this.show();
+            return;
+        }
+
+        // Determine element type and call the appropriate method
+        // Note: `element.type` might be a more robust way if the schema consistently provides it.
+        // For now, duck typing based on properties.
+        if (element.hasOwnProperty('columns') && element.hasOwnProperty('name') && !element.hasOwnProperty('sourceTable')) { // Likely a table
+            this.showTableProperties(element);
+        } else if (element.hasOwnProperty('sourceTable') && element.hasOwnProperty('targetTable')) { // Likely a relationship
+            this.showRelationshipProperties(element);
+        } else if (element.hasOwnProperty('table') && element.hasOwnProperty('column') && element.column.hasOwnProperty('name')) { // Likely a column selection event data from ERDApplication
+            // The event data for column selection is often { table: tableData, column: columnData }
+            // Or if a direct column object is passed, it might have `name` and `type` but not `columns` or `sourceTable`
+            this.showColumnProperties(element.column);
+        } else if (element.hasOwnProperty('name') && element.hasOwnProperty('type') && !element.hasOwnProperty('columns') && !element.hasOwnProperty('sourceTable')) { // Likely a direct column object
+             this.showColumnProperties(element);
+        }
+        else {
+            console.warn('PropertiesPanel: Unknown element type for rendering', element);
+            this.updateContent('<div class="panel-placeholder"><div class="placeholder-icon">❓</div><div class="placeholder-text">Unknown element type.</div></div>');
+            this.show();
         }
     }
 

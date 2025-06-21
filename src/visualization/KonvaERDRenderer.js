@@ -31,6 +31,7 @@ export class KonvaERDRenderer {
         this.currentLayout = null;
         this.selectedTable = null;
         this.hoveredTable = null;
+        this.searchHighlightShape = null; // For highlighting search results
         this.initialized = false;
 
         // Object pools for performance
@@ -47,7 +48,16 @@ export class KonvaERDRenderer {
                 headerBackground: '#cce5ff',
                 headerHeight: 30,
                 rowHeight: 25,
-                padding: 8
+                padding: 8,
+                isolateButton: {
+                    size: 18,
+                    padding: 5,
+                    fill: '#f0f0f0',
+                    stroke: '#cccccc',
+                    strokeWidth: 1,
+                    iconFill: '#555555',
+                    hoverFill: '#e0e0e0',
+                }
             },
             text: {
                 fontFamily: 'Arial, sans-serif',
@@ -66,8 +76,31 @@ export class KonvaERDRenderer {
                 stroke: '#2563eb',
                 strokeWidth: 2,
                 dash: [5, 5]
+        },
+        searchHighlight: {
+            stroke: '#f59e0b', // Amber color
+            strokeWidth: 3,
+            dash: [10, 5],
+            opacity: 0.8,
+            cornerRadius: 5,
+            animationDuration: 0.3 // seconds
             }
         };
+    }
+
+    /**
+     * Checks if a table has any relationships.
+     * @param {string} tableName - The name of the table to check.
+     * @returns {boolean} True if the table has relationships, false otherwise.
+     */
+    hasRelationships(tableName) {
+        if (!this.currentSchema || !this.currentSchema.relationships) {
+            return false;
+        }
+        return this.currentSchema.relationships.some(
+            rel => (rel.from?.table === tableName || rel.fromTable === tableName) ||
+                   (rel.to?.table === tableName || rel.toTable === tableName)
+        );
     }
 
     /**
@@ -398,6 +431,61 @@ export class KonvaERDRenderer {
         // Add columns
         this.addColumnsToTable(tableGroup, tableData, size);
 
+        // Add Isolate Button if table has relationships
+        if (this.hasRelationships(tableData.name)) {
+            const btnStyle = this.styles.table.isolateButton;
+            const isolateBtnGroup = new Konva.Group({
+                x: size.width - btnStyle.size - btnStyle.padding,
+                y: btnStyle.padding,
+                name: 'isolate-btn-group',
+                visible: false // Initially hidden
+            });
+
+            const isolateBtnBg = new Konva.Rect({
+                width: btnStyle.size,
+                height: btnStyle.size,
+                fill: btnStyle.fill,
+                stroke: btnStyle.stroke,
+                strokeWidth: btnStyle.strokeWidth,
+                cornerRadius: 3
+            });
+
+            // Simple icon (e.g., a target or filter symbol) - using text for simplicity
+            // A Path or SVG would be better for a real icon
+            const isolateBtnIcon = new Konva.Text({
+                text: '🎯', // Target icon as an example
+                fontSize: btnStyle.size * 0.6,
+                fill: btnStyle.iconFill,
+                width: btnStyle.size,
+                height: btnStyle.size,
+                align: 'center',
+                verticalAlign: 'middle',
+                listening: false, // Icon itself should not capture events
+            });
+
+            isolateBtnGroup.add(isolateBtnBg);
+            isolateBtnGroup.add(isolateBtnIcon);
+
+            isolateBtnGroup.on('mouseenter', () => {
+                isolateBtnBg.fill(btnStyle.hoverFill);
+                this.stage.container().style.cursor = 'pointer';
+                this.tablesLayer.draw();
+            });
+            isolateBtnGroup.on('mouseleave', () => {
+                isolateBtnBg.fill(btnStyle.fill);
+                this.stage.container().style.cursor = 'default';
+                this.tablesLayer.draw();
+            });
+
+            isolateBtnGroup.on('click tap', (evt) => {
+                evt.cancelBubble = true; // Prevent table selection
+                if (this.eventBus) {
+                    this.eventBus.emit('table:isolate', tableData);
+                }
+            });
+            tableGroup.add(isolateBtnGroup);
+        }
+
         // Setup table interactions
         this.setupTableInteractions(tableGroup, tableData);
 
@@ -513,8 +601,42 @@ export class KonvaERDRenderer {
      */
     setupTableInteractions(tableGroup, tableData) {
         tableGroup.on('click tap', (e) => this.onTableClick(e, tableData));
-        tableGroup.on('mouseenter', (e) => this.onTableMouseEnter(e, tableData));
-        tableGroup.on('mouseleave', (e) => this.onTableMouseLeave(e, tableData));
+        tableGroup.on('mouseenter', (e) => {
+            this.onTableMouseEnter(e, tableData);
+            const isolateBtn = tableGroup.findOne('.isolate-btn-group');
+            if (isolateBtn) {
+                isolateBtn.visible(true);
+                this.tablesLayer.batchDraw();
+            }
+        });
+        tableGroup.on('mouseleave', (e) => {
+            this.onTableMouseLeave(e, tableData);
+            // Only hide if not over the button itself
+            const isolateBtn = tableGroup.findOne('.isolate-btn-group');
+            if (!isolateBtn) return;
+
+            const pointerPos = this.stage.getPointerPosition();
+            let mouseIsOverButton = false;
+
+            if (pointerPos && isolateBtn.isVisible()) { // Check only if button is visible
+                // Get button's absolute bounding box on the stage
+                const btnRect = isolateBtn.getClientRect({ relativeTo: this.stage });
+
+                if (
+                    pointerPos.x >= btnRect.x &&
+                    pointerPos.x <= btnRect.x + btnRect.width &&
+                    pointerPos.y >= btnRect.y &&
+                    pointerPos.y <= btnRect.y + btnRect.height
+                ) {
+                    mouseIsOverButton = true;
+                }
+            }
+
+            if (!mouseIsOverButton) {
+                isolateBtn.visible(false);
+                this.tablesLayer.batchDraw();
+            }
+        });
 
         tableGroup.on('dragstart', (e) => this.onDragStart(e, tableData, tableGroup));
         tableGroup.on('dragmove', (e) => this.onDrag(e, tableData, tableGroup));
@@ -783,20 +905,218 @@ export class KonvaERDRenderer {
             }
         }
 
-        const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTable, fromSide);
-        const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTable, toSide);
+        // Use table's layout info directly for side connection points
+        const sourceTableLayoutInfo = { x: fromPos.x, y: fromPos.y, width: fromSize.width, height: fromSize.height };
+        const targetTableLayoutInfo = { x: toPos.x, y: toPos.y, width: toSize.width, height: toSize.height };
 
-        const points = [];
-        points.push(sourcePoint.x, sourcePoint.y);
+        const sourcePoint = this.getTableSideConnectionPoint(sourceTableLayoutInfo, fromSide);
+        const targetPoint = this.getTableSideConnectionPoint(targetTableLayoutInfo, toSide);
 
-        const midX = sourcePoint.x + (targetPoint.x - sourcePoint.x) / 2;
+        const points = [sourcePoint.x, sourcePoint.y];
+        const standoff = 30; // How far out from the table the first segment goes
 
-        points.push(midX, sourcePoint.y);
-        points.push(midX, targetPoint.y);
+        let currentX = sourcePoint.x;
+        let currentY = sourcePoint.y;
 
+        // Obstacles: all other tables' bounding boxes (excluding source and target)
+        const obstacles = this.currentSchema.tables
+            .filter(t => t.name !== fromTable.name && t.name !== toTable.name)
+            .map(t => {
+                const pos = this.getTablePosition(t.name, layout);
+                const size = this.getTableSize(t.name, layout);
+                // Create a slightly padded obstacle for better clearance
+                const padding = 5;
+                return {
+                    x: pos.x - padding,
+                    y: pos.y - padding,
+                    width: size.width + 2 * padding,
+                    height: size.height + 2 * padding,
+                    name: t.name
+                };
+            });
+
+        // 1. Initial segment outwards from source table
+        let nextX = currentX;
+        if (fromSide === 'left') {
+            nextX -= standoff;
+        } else { // right
+            nextX += standoff;
+        }
+        // No obstacle check needed for this short segment if standoff is reasonable
+        points.push(nextX, currentY);
+        currentX = nextX;
+
+        // Attempt a 5-segment path (typical for orthogonal routing)
+        // Path: source -> p1(currentX,currentY) -> p2 -> p3 -> p4(preTargetX, targetPoint.y) -> targetPoint
+
+        let p2Y, p3X;
+
+        // Determine primary direction of connection (horizontal or vertical dominance)
+        const dxTotal = targetPoint.x - sourcePoint.x;
+        const dyTotal = targetPoint.y - sourcePoint.y;
+
+        if (Math.abs(dxTotal) > Math.abs(dyTotal) || fromSide !== toSide) { // Prefer horizontal dominant routing or when sides are opposite
+            p2Y = (currentY + targetPoint.y) / 2;
+            if (!this.isPathClear(currentX, currentY, currentX, p2Y, obstacles)) {
+                 // If direct path to midY is blocked, try targetY directly on currentX before horizontal move
+                 if (this.isPathClear(currentX, currentY, currentX, targetPoint.y, obstacles)) {
+                    p2Y = targetPoint.y;
+                 } else { // If still blocked, use original Y and hope horizontal move clears
+                    p2Y = currentY;
+                 }
+            }
+        } else { // Prefer vertical dominant routing
+             p2Y = targetPoint.y; // Try to align Y with target first
+             if (!this.isPathClear(currentX, currentY, currentX, p2Y, obstacles)) {
+                 p2Y = currentY; // Fallback if direct Y alignment is blocked
+             }
+        }
+        points.push(currentX, p2Y);
+        currentY = p2Y;
+
+        // p3: Horizontal segment to align with target's standoff X
+        let preTargetX = targetPoint.x;
+        if (toSide === 'left') {
+            preTargetX += standoff;
+        } else { // right
+            preTargetX -= standoff;
+        }
+        p3X = preTargetX;
+
+        if (!this.isPathClear(currentX, currentY, p3X, currentY, obstacles)) {
+            // If direct horizontal path is blocked, attempt a vertical detour
+            // This part can get very complex for optimal detours.
+            // Simple: if currentY is roughly between source and target Y, try moving to sourceY or targetY
+            // and then horizontally. This is a heuristic.
+            let detourY = (Math.abs(currentY - sourcePoint.y) < Math.abs(currentY - targetPoint.y)) ? sourcePoint.y : targetPoint.y;
+            if (currentY === targetPoint.y) detourY = sourcePoint.y; // Switch if already at targetY
+
+            if(this.isPathClear(currentX, currentY, currentX, detourY, obstacles)) { // Vertical leg of detour
+                points.push(currentX, detourY);
+                currentY = detourY;
+                // Now try horizontal move at this new Y
+                if(!this.isPathClear(currentX, currentY, p3X, currentY, obstacles)) {
+                    // If still blocked, we might be stuck with a direct line or accept crossing
+                    console.warn(`Routing obstacle for ${fromTable.name} to ${toTable.name}. Path may be suboptimal.`);
+                }
+            } else {
+                 console.warn(`Routing obstacle for ${fromTable.name} to ${toTable.name}. Path may be suboptimal.`);
+            }
+        }
+        points.push(p3X, currentY);
+        currentX = p3X;
+
+        // p4: Vertical segment to align with targetPoint.y
+        if (currentY !== targetPoint.y) { // Only add if Y is different
+             if (!this.isPathClear(currentX, currentY, currentX, targetPoint.y, obstacles)) {
+                 console.warn(`Routing obstacle for final Y alignment for ${fromTable.name} to ${toTable.name}.`);
+             }
+            points.push(currentX, targetPoint.y);
+            currentY = targetPoint.y;
+        }
+
+        // Final segment into the target table
         points.push(targetPoint.x, targetPoint.y);
 
-        return points;
+        return this.simplifyPath(points);
+    }
+
+    /**
+     * Get a connection point on the side of a table's bounding box.
+     * @param {Object} tableLayoutInfo - Object containing { x, y, width, height } for the table.
+     * @param {string} side - 'left' or 'right'.
+     * @returns {Object} Point with x and y.
+     */
+    getTableSideConnectionPoint(tableLayoutInfo, side) {
+        let x;
+        const y = tableLayoutInfo.y + tableLayoutInfo.height / 2; // Vertical midpoint
+
+        if (side === 'left') {
+            x = tableLayoutInfo.x;
+        } else { // right
+            x = tableLayoutInfo.x + tableLayoutInfo.width;
+        }
+        return { x, y };
+    }
+
+    // Helper: Check if a line segment intersects a rectangle
+    // Rect is {x, y, width, height}
+    lineIntersectsRect(x1, y1, x2, y2, rect) {
+        const padding = 1; // Collision padding
+        const rx = rect.x - padding;
+        const ry = rect.y - padding;
+        const rwidth = rect.width + 2 * padding;
+        const rheight = rect.height + 2 * padding;
+
+        // Check intersection with each side of the rectangle
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx, ry, rx + rwidth, ry)) return true; // Top
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx + rwidth, ry, rx + rwidth, ry + rheight)) return true; // Right
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx + rwidth, ry + rheight, rx, ry + rheight)) return true; // Bottom
+        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx, ry + rheight, rx, ry)) return true; // Left
+
+        // Check if line is fully inside (for orthogonal lines that don't cross segments but are contained)
+        // A simple check: if midpoint of line is inside rect.
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        if (x1 === x2 || y1 === y2) { // Only for perfectly horizontal/vertical lines
+            if (midX > rx && midX < rx + rwidth && midY > ry && midY < ry + rheight) {
+                 // Check if either endpoint is outside. If so, it must intersect.
+                 const p1_inside = (x1 >= rx && x1 <= rx + rwidth && y1 >= ry && y1 <= ry + rheight);
+                 const p2_inside = (x2 >= rx && x2 <= rx + rwidth && y2 >= ry && y2 <= ry + rheight);
+                 if (!p1_inside || !p2_inside) return true;
+            }
+        }
+        return false;
+    }
+
+    // Helper: Check if two line segments intersect
+    lineSegmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (den === 0) return false; // Parallel or collinear
+
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+
+        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+    }
+
+    // Helper: Check if a path segment is clear of obstacles
+    isPathClear(x1, y1, x2, y2, obstacles) {
+        for (const obs of obstacles) {
+            if (this.lineIntersectsRect(x1, y1, x2, y2, obs)) {
+                return false; // Path is blocked
+            }
+        }
+        return true; // Path is clear
+    }
+
+    // Helper: Simplify path by removing redundant collinear points
+    simplifyPath(points) {
+        if (points.length <= 4) return points;
+        const simplified = [points[0], points[1]];
+        for (let i = 2; i < points.length - 2; i += 2) {
+            const x1 = simplified[simplified.length - 2];
+            const y1 = simplified[simplified.length - 1];
+            const x2 = points[i];
+            const y2 = points[i + 1];
+            const x3 = points[i + 2];
+            const y3 = points[i + 3];
+
+            const isCollinear = (x1 === x2 && x2 === x3) || (y1 === y2 && y2 === y3);
+            if (!isCollinear) {
+                simplified.push(x2, y2);
+            }
+        }
+        simplified.push(points[points.length - 2], points[points.length - 1]);
+
+        // Final check: if last two points are same as third to last two, remove last two
+        if (simplified.length >=6 &&
+            simplified[simplified.length-1] === simplified[simplified.length-3] &&
+            simplified[simplified.length-2] === simplified[simplified.length-4]) {
+            simplified.pop();
+            simplified.pop();
+        }
+        return simplified;
     }
 
 
@@ -1169,5 +1489,125 @@ export class KonvaERDRenderer {
         this.tableGroups.clear();
         this.connectionLines.clear();
         this.initialized = false;
+    }
+
+    /**
+     * Navigate to and highlight an element on the canvas.
+     * @param {Object} navigationData - Data about the element to navigate to.
+     *                                 Expected to have `type` ('table' or 'column')
+     *                                 and `target` (the search result object).
+     */
+    navigateToElement(navigationData) {
+        if (!navigationData || !navigationData.target) {
+            console.warn('[KonvaERDRenderer] Invalid navigation data received.', navigationData);
+            return;
+        }
+
+        const targetItem = navigationData.target;
+        let konvaElement = null;
+        let elementBounds = null;
+
+        this.clearSearchHighlight(); // Clear previous highlight first
+
+        if (targetItem.type === 'table') {
+            konvaElement = this.tableGroups.get(targetItem.name);
+            if (konvaElement) {
+                elementBounds = konvaElement.getClientRect();
+            }
+        } else if (targetItem.type === 'column') {
+            const tableGroup = this.tableGroups.get(targetItem.table);
+            if (tableGroup) {
+                // Find the visual representation of the column.
+                // This assumes column backgrounds store 'columnData' as an attribute.
+                const columnShape = tableGroup.findOne((node) => {
+                    return node.name() === 'column-background' && node.getAttr('columnData')?.name === targetItem.name;
+                });
+                if (columnShape) {
+                    konvaElement = columnShape; // For focusing, we might focus the table, then highlight column
+                    // Get bounds relative to the stage
+                    const columnRect = columnShape.getClientRect({ relativeTo: tableGroup });
+                    elementBounds = {
+                        x: tableGroup.x() + columnRect.x,
+                        y: tableGroup.y() + columnRect.y,
+                        width: columnRect.width,
+                        height: columnRect.height,
+                    };
+                } else {
+                     // Fallback to table if specific column visual not found
+                    konvaElement = tableGroup;
+                    elementBounds = tableGroup.getClientRect();
+                }
+            }
+        } else if (targetItem.type === 'relationship') {
+            // Find relationship
+            const relKey = `${targetItem.fromTable}-${targetItem.fromColumn || targetItem.data.from.column}-${targetItem.toTable}-${targetItem.toColumn || targetItem.data.to.column}`;
+            konvaElement = this.connectionLines.get(relKey);
+             if (konvaElement) {
+                elementBounds = konvaElement.getClientRect();
+            }
+        }
+
+
+        if (!konvaElement && !elementBounds) {
+            console.warn(`[KonvaERDRenderer] Element not found for search result:`, targetItem);
+            return;
+        }
+
+        // If only elementBounds is available (e.g. for column), use that. Otherwise, use konvaElement's bounds.
+        const finalBounds = elementBounds || konvaElement.getClientRect();
+
+        // 1. Pan and Zoom to the element
+        const scale = Math.min(this.stage.width() / (finalBounds.width + 100), this.stage.height() / (finalBounds.height + 100), 1.5); // Add padding, cap zoom
+
+        this.stage.to({
+            x: -finalBounds.x * scale + this.stage.width() / 2 - (finalBounds.width * scale / 2),
+            y: -finalBounds.y * scale + this.stage.height() / 2 - (finalBounds.height * scale / 2),
+            scaleX: scale,
+            scaleY: scale,
+            duration: this.styles.searchHighlight.animationDuration, // Use animation duration from styles
+            onFinish: () => {
+                if (this.eventBus) {
+                    this.eventBus.emit('zoom:changed', scale);
+                }
+            }
+        });
+
+
+        // 2. Highlight the element
+        if (navigationData.highlight) {
+            this.searchHighlightShape = new Konva.Rect({
+                x: finalBounds.x,
+                y: finalBounds.y,
+                width: finalBounds.width,
+                height: finalBounds.height,
+                stroke: this.styles.searchHighlight.stroke,
+                strokeWidth: this.styles.searchHighlight.strokeWidth,
+                dash: this.styles.searchHighlight.dash,
+                opacity: this.styles.searchHighlight.opacity,
+                cornerRadius: this.styles.searchHighlight.cornerRadius,
+                listening: false, // Don't let it interfere with mouse events
+            });
+            this.uiLayer.add(this.searchHighlightShape);
+            this.uiLayer.batchDraw(); // Use batchDraw for efficiency
+        }
+         // Also select the table in the properties panel if it's a table or column
+        if (targetItem.type === 'table' && this.eventBus) {
+            this.eventBus.emit('table:selected', targetItem.data);
+        } else if (targetItem.type === 'column' && this.eventBus) {
+            this.eventBus.emit('column:selected', { table: targetItem.data.table, column: targetItem.data.column });
+        } else if (targetItem.type === 'relationship' && this.eventBus) {
+            this.eventBus.emit('relationship:selected', targetItem.data);
+        }
+    }
+
+    /**
+     * Clears any visual highlight applied for search results.
+     */
+    clearSearchHighlight() {
+        if (this.searchHighlightShape) {
+            this.searchHighlightShape.destroy();
+            this.searchHighlightShape = null;
+            this.uiLayer.batchDraw();
+        }
     }
 }
