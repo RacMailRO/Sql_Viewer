@@ -905,12 +905,11 @@ export class KonvaERDRenderer {
             }
         }
 
-        // Use table's layout info directly for side connection points
-        const sourceTableLayoutInfo = { x: fromPos.x, y: fromPos.y, width: fromSize.width, height: fromSize.height };
-        const targetTableLayoutInfo = { x: toPos.x, y: toPos.y, width: toSize.width, height: toSize.height };
 
-        const sourcePoint = this.getTableSideConnectionPoint(sourceTableLayoutInfo, fromSide);
-        const targetPoint = this.getTableSideConnectionPoint(targetTableLayoutInfo, toSide);
+        // Get connection points based on column alignment and table side
+        const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTable, fromSide);
+        const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTable, toSide);
+
 
         const points = [sourcePoint.x, sourcePoint.y];
         const standoff = 30; // How far out from the table the first segment goes

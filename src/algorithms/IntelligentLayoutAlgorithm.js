@@ -488,22 +488,25 @@ export class IntelligentLayoutAlgorithm {
      */
     resolveRemainingOverlaps() {
         const tableNames = Array.from(this.tablePositions.keys());
-        let hasOverlaps = true;
+        let totalOverlapsInIteration;
         let iterations = 0;
-        const maxIterations = 20;
-        
-        while (hasOverlaps && iterations < maxIterations) {
-            hasOverlaps = false;
-            iterations++;
-            
+        const maxOverlapIterations = 50; // Safety break for the overlap resolution loop
+
+        do {
+            totalOverlapsInIteration = 0;
             for (let i = 0; i < tableNames.length; i++) {
                 for (let j = i + 1; j < tableNames.length; j++) {
                     if (this.tablesOverlap(tableNames[i], tableNames[j])) {
-                        hasOverlaps = true;
                         this.separateOverlappingTables(tableNames[i], tableNames[j]);
+                        totalOverlapsInIteration++;
                     }
                 }
             }
+            iterations++;
+        } while (totalOverlapsInIteration > 0 && iterations < maxOverlapIterations);
+
+        if (iterations >= maxOverlapIterations && totalOverlapsInIteration > 0) {
+            console.warn(`Overlap resolution reached max iterations (${maxOverlapIterations}) with ${totalOverlapsInIteration} overlaps remaining.`);
         }
     }
 

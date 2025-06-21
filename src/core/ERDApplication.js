@@ -219,10 +219,10 @@ export class ERDApplication {
         await this.exportManager.init();
 
         // Initialize layout algorithm
-        this.layoutAlgorithm = new LayoutAlgorithm();
+        this.layoutAlgorithm = new LayoutAlgorithm(); // Basic fallback
         
-        // Initialize intelligent layout algorithm
-        this.intelligentLayoutAlgorithm = new IntelligentLayoutAlgorithm();
+        // Initialize intelligent layout algorithm with current settings
+        this.intelligentLayoutAlgorithm = new IntelligentLayoutAlgorithm(this.settings);
         
         // Initialize search manager
         this.searchManager = new SearchManager(this.eventBus);
@@ -456,6 +456,9 @@ export class ERDApplication {
                 this.settings.tableDistance = parseInt(e.target.value);
                 tableDistanceValue.textContent = this.settings.tableDistance + 'px';
                 localStorage.setItem('erd_table_distance', this.settings.tableDistance);
+                if (this.schemaModel.getSchema() && this.schemaModel.getSchema().tables.length > 0) {
+                    this.applyAutoLayout();
+                }
             });
         }
         
@@ -475,6 +478,9 @@ export class ERDApplication {
                 this.settings.layoutPadding = parseInt(e.target.value);
                 layoutPaddingValue.textContent = this.settings.layoutPadding + 'px';
                 localStorage.setItem('erd_layout_padding', this.settings.layoutPadding);
+                if (this.schemaModel.getSchema() && this.schemaModel.getSchema().tables.length > 0) {
+                    this.applyAutoLayout();
+                }
             });
         }
     }
@@ -685,12 +691,51 @@ export class ERDApplication {
                 }))
             };
 
-            const layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
+            // Ensure schema and renderer are present
+            if (!schema || !schema.tables || schema.tables.length === 0 || !this.renderer) {
+                this.hideLoading();
+                return;
+            }
+            const schemaForLayout = {
+                ...schema,
+                relationships: schema.relationships.map(r => ({
+                    sourceTable: r.from.table,
+                    sourceColumn: r.from.column,
+                    targetTable: r.to.table,
+                    targetColumn: r.to.column,
+                    type: r.type
+                }))
+            };
+
+            let layout;
+            if (this.intelligentLayoutAlgorithm) {
+                this.intelligentLayoutAlgorithm.updateSettings(this.settings); // Pass current app settings
+                const canvasBounds = {
+                    width: this.elements.canvas.clientWidth || this.renderer.stage.width(),
+                    height: this.elements.canvas.clientHeight || this.renderer.stage.height()
+                };
+                layout = this.intelligentLayoutAlgorithm.calculateLayout(schemaForLayout, canvasBounds);
+            } else {
+                // Fallback to basic layout algorithm if intelligent one is not available
+                console.warn("IntelligentLayoutAlgorithm not available, using basic layout.");
+                layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
+            }
 
             this.diagramState.setLayout(layout);
-            this.renderer.updateLayout(layout);
+            this.renderer.updateLayout(layout); // This should re-render tables and connections
             
             // Calculate layout statistics
+            // Ensure layout.tables exists and renderer.stage is available for bounds.
+            const bounds = (this.renderer && this.renderer.stage) ? {
+                width: this.renderer.stage.width(),
+                height: this.renderer.stage.height()
+            } : { width: 800, height: 600 }; // Fallback bounds
+
+            if (this.intelligentLayoutAlgorithm && layout && layout.tables) {
+                const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
+                this.showLayoutStats(stats);
+            }
+
             const bounds = {
                 width: this.renderer.stage.width(),
                 height: this.renderer.stage.height()
