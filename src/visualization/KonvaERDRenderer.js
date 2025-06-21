@@ -48,7 +48,16 @@ export class KonvaERDRenderer {
                 headerBackground: '#cce5ff',
                 headerHeight: 30,
                 rowHeight: 25,
-                padding: 8
+                padding: 8,
+                isolateButton: {
+                    size: 18,
+                    padding: 5,
+                    fill: '#f0f0f0',
+                    stroke: '#cccccc',
+                    strokeWidth: 1,
+                    iconFill: '#555555',
+                    hoverFill: '#e0e0e0',
+                }
             },
             text: {
                 fontFamily: 'Arial, sans-serif',
@@ -77,6 +86,21 @@ export class KonvaERDRenderer {
             animationDuration: 0.3 // seconds
             }
         };
+    }
+
+    /**
+     * Checks if a table has any relationships.
+     * @param {string} tableName - The name of the table to check.
+     * @returns {boolean} True if the table has relationships, false otherwise.
+     */
+    hasRelationships(tableName) {
+        if (!this.currentSchema || !this.currentSchema.relationships) {
+            return false;
+        }
+        return this.currentSchema.relationships.some(
+            rel => (rel.from?.table === tableName || rel.fromTable === tableName) ||
+                   (rel.to?.table === tableName || rel.toTable === tableName)
+        );
     }
 
     /**
@@ -407,6 +431,61 @@ export class KonvaERDRenderer {
         // Add columns
         this.addColumnsToTable(tableGroup, tableData, size);
 
+        // Add Isolate Button if table has relationships
+        if (this.hasRelationships(tableData.name)) {
+            const btnStyle = this.styles.table.isolateButton;
+            const isolateBtnGroup = new Konva.Group({
+                x: size.width - btnStyle.size - btnStyle.padding,
+                y: btnStyle.padding,
+                name: 'isolate-btn-group',
+                visible: false // Initially hidden
+            });
+
+            const isolateBtnBg = new Konva.Rect({
+                width: btnStyle.size,
+                height: btnStyle.size,
+                fill: btnStyle.fill,
+                stroke: btnStyle.stroke,
+                strokeWidth: btnStyle.strokeWidth,
+                cornerRadius: 3
+            });
+
+            // Simple icon (e.g., a target or filter symbol) - using text for simplicity
+            // A Path or SVG would be better for a real icon
+            const isolateBtnIcon = new Konva.Text({
+                text: '🎯', // Target icon as an example
+                fontSize: btnStyle.size * 0.6,
+                fill: btnStyle.iconFill,
+                width: btnStyle.size,
+                height: btnStyle.size,
+                align: 'center',
+                verticalAlign: 'middle',
+                listening: false, // Icon itself should not capture events
+            });
+
+            isolateBtnGroup.add(isolateBtnBg);
+            isolateBtnGroup.add(isolateBtnIcon);
+
+            isolateBtnGroup.on('mouseenter', () => {
+                isolateBtnBg.fill(btnStyle.hoverFill);
+                this.stage.container().style.cursor = 'pointer';
+                this.tablesLayer.draw();
+            });
+            isolateBtnGroup.on('mouseleave', () => {
+                isolateBtnBg.fill(btnStyle.fill);
+                this.stage.container().style.cursor = 'default';
+                this.tablesLayer.draw();
+            });
+
+            isolateBtnGroup.on('click tap', (evt) => {
+                evt.cancelBubble = true; // Prevent table selection
+                if (this.eventBus) {
+                    this.eventBus.emit('table:isolate', tableData);
+                }
+            });
+            tableGroup.add(isolateBtnGroup);
+        }
+
         // Setup table interactions
         this.setupTableInteractions(tableGroup, tableData);
 
@@ -522,8 +601,30 @@ export class KonvaERDRenderer {
      */
     setupTableInteractions(tableGroup, tableData) {
         tableGroup.on('click tap', (e) => this.onTableClick(e, tableData));
-        tableGroup.on('mouseenter', (e) => this.onTableMouseEnter(e, tableData));
-        tableGroup.on('mouseleave', (e) => this.onTableMouseLeave(e, tableData));
+        tableGroup.on('mouseenter', (e) => {
+            this.onTableMouseEnter(e, tableData);
+            const isolateBtn = tableGroup.findOne('.isolate-btn-group');
+            if (isolateBtn) {
+                isolateBtn.visible(true);
+                this.tablesLayer.batchDraw();
+            }
+        });
+        tableGroup.on('mouseleave', (e) => {
+            this.onTableMouseLeave(e, tableData);
+            // Only hide if not over the button itself
+            const pointerPos = this.stage.getPointerPosition();
+            const isolateBtn = tableGroup.findOne('.isolate-btn-group');
+            if (isolateBtn && pointerPos) {
+                const shape = isolateBtn.getIntersection(pointerPos);
+                if (!shape) { // If pointer is not over the button
+                    isolateBtn.visible(false);
+                    this.tablesLayer.batchDraw();
+                }
+            } else if (isolateBtn) { // If pointerPos is null (mouse left canvas)
+                 isolateBtn.visible(false);
+                 this.tablesLayer.batchDraw();
+            }
+        });
 
         tableGroup.on('dragstart', (e) => this.onDragStart(e, tableData, tableGroup));
         tableGroup.on('dragmove', (e) => this.onDrag(e, tableData, tableGroup));
