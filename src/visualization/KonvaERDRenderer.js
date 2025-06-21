@@ -905,12 +905,15 @@ export class KonvaERDRenderer {
             }
         }
 
+
         // Get connection points based on column alignment and table side
         const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTable, fromSide);
         const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTable, toSide);
 
+
         const points = [sourcePoint.x, sourcePoint.y];
         const standoff = 30; // How far out from the table the first segment goes
+
 
         let currentX = sourcePoint.x;
         let currentY = sourcePoint.y;

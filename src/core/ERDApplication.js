@@ -167,17 +167,20 @@ export class ERDApplication {
             tooltip: document.getElementById('tooltip'),
 
             // New button
+
             exitIsolationBtn: document.getElementById('exit-isolation-btn'),
 
             // Toolbar buttons for search and filter
             searchBtn: document.getElementById('search-btn'),
             filterBtn: document.getElementById('filter-btn'),
 
+
             // Settings panel elements
             settingsBtn: document.getElementById('settings-btn'),
             settingsPanel: document.getElementById('settings-panel'),
             settingsOverlay: document.getElementById('settings-overlay'),
             closeSettingsBtn: document.getElementById('close-settings-btn')
+
         };
 
         // Validate required elements
@@ -712,6 +715,7 @@ export class ERDApplication {
             let layout;
             if (this.intelligentLayoutAlgorithm) {
                 this.intelligentLayoutAlgorithm.updateSettings(this.settings); // Pass current app settings
+
                 let canvasWidth = this.elements.canvas.clientWidth || this.renderer.stage.width();
                 let canvasHeight = this.elements.canvas.clientHeight || this.renderer.stage.height();
 
@@ -727,6 +731,7 @@ export class ERDApplication {
                 const canvasBounds = {
                     width: canvasWidth,
                     height: canvasHeight
+
                 };
                 layout = this.intelligentLayoutAlgorithm.calculateLayout(schemaForLayout, canvasBounds);
             } else {
