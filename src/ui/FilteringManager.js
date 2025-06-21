@@ -27,6 +27,71 @@ export class FilteringManager {
     }
 
     /**
+     * Isolate a single table and its direct connections.
+     * @param {string} tableName - The name of the table to isolate.
+     */
+    isolateSingleTable(tableName) {
+        if (!this.originalData || !this.originalData.tables) {
+            console.warn('Original data not available for isolation.');
+            return;
+        }
+
+        const targetTable = this.originalData.tables.find(t => t.name === tableName);
+        if (!targetTable) {
+            console.warn(`Table "${tableName}" not found for isolation.`);
+            return;
+        }
+
+        const directlyConnectedTableNames = new Set([tableName]);
+        const relevantRelationships = this.originalData.relationships.filter(rel => {
+            const fromTable = rel.from?.table || rel.fromTable;
+            const toTable = rel.to?.table || rel.toTable;
+
+            if (fromTable === tableName) {
+                directlyConnectedTableNames.add(toTable);
+                return true;
+            }
+            if (toTable === tableName) {
+                directlyConnectedTableNames.add(fromTable);
+                return true;
+            }
+            return false;
+        });
+
+        const filterId = `isolate-${tableName}`;
+        const filter = {
+            id: filterId,
+            type: 'isolation', // Consistent type for isolation filters
+            name: `Isolated: ${tableName}`,
+            description: `Showing table "${tableName}" and its direct connections.`,
+            // The 'data' parameter to apply is the current schema being filtered.
+            // However, for this specific isolation, we always start from originalData.
+            apply: (data) => {
+                const tablesToShow = this.originalData.tables.filter(t => directlyConnectedTableNames.has(t.name));
+                // Filter relationships again based on the tablesToShow, ensuring both ends are present
+                const finalRelationships = relevantRelationships.filter(rel => {
+                    const fromTable = rel.from?.table || rel.fromTable;
+                    const toTable = rel.to?.table || rel.toTable;
+                    return directlyConnectedTableNames.has(fromTable) && directlyConnectedTableNames.has(toTable);
+                });
+
+                return {
+                    ...this.originalData, // Start from original data to avoid compounding filters
+                    tables: tablesToShow,
+                    relationships: finalRelationships
+                };
+            }
+        };
+
+        // Clear other filters before applying single table isolation for a cleaner state
+        this.activeFilters.clear();
+        this.isolationMode = true; // Set isolation mode
+        this.applyFilter(filter); // This will also update UI and emit schema:filtered
+        this.updateIsolationModeUI(); // Explicitly update button state
+    }
+
+
+    /**
      * Initialize the filtering manager
      */
     initialize() {
