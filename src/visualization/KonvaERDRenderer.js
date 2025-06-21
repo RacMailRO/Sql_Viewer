@@ -37,7 +37,8 @@ export class KonvaERDRenderer {
         // Object pools for performance
         this.tableGroups = new Map();
         this.connectionLines = new Map();
-        
+        this.drawnPaths = new Set(); // <-- ADD THIS LINE
+
         // Style constants
         this.styles = {
             table: {
@@ -76,14 +77,14 @@ export class KonvaERDRenderer {
                 stroke: '#2563eb',
                 strokeWidth: 2,
                 dash: [5, 5]
-        },
-        searchHighlight: {
-            stroke: '#f59e0b', // Amber color
-            strokeWidth: 3,
-            dash: [10, 5],
-            opacity: 0.8,
-            cornerRadius: 5,
-            animationDuration: 0.3 // seconds
+            },
+            searchHighlight: {
+                stroke: '#f59e0b', // Amber color
+                strokeWidth: 3,
+                dash: [10, 5],
+                opacity: 0.8,
+                cornerRadius: 5,
+                animationDuration: 0.3 // seconds
             }
         };
     }
@@ -99,7 +100,7 @@ export class KonvaERDRenderer {
         }
         return this.currentSchema.relationships.some(
             rel => (rel.from?.table === tableName || rel.fromTable === tableName) ||
-                   (rel.to?.table === tableName || rel.toTable === tableName)
+                (rel.to?.table === tableName || rel.toTable === tableName)
         );
     }
 
@@ -343,7 +344,7 @@ export class KonvaERDRenderer {
         this.connectionsLayer.destroyChildren();
         this.tablesLayer.destroyChildren();
         this.uiLayer.destroyChildren();
-        
+
         // Clear object pools
         this.tableGroups.clear();
         this.connectionLines.clear();
@@ -501,7 +502,7 @@ export class KonvaERDRenderer {
     addColumnsToTable(tableGroup, tableData, size) {
         tableData.columns.forEach((column, index) => {
             const y = this.styles.table.headerHeight + (index * this.styles.table.rowHeight);
-            
+
             // Column background (for hover effects)
             const columnBackground = new Konva.Rect({
                 x: 0,
@@ -684,6 +685,7 @@ export class KonvaERDRenderer {
      * @param {Object} layout - Layout data
      */
     renderConnections(relationships, layout) {
+        this.drawnPaths.clear(); // <-- ADD THIS LINE
         relationships.forEach(relationship => {
             const connectionGroup = this.createConnectionLine(relationship, layout);
             if (connectionGroup) {
@@ -732,20 +734,16 @@ export class KonvaERDRenderer {
         });
 
         // Store relationship data
-        connectionGroup.relationshipData = {
-            fromTable: fromTable.name,
-            fromColumn: fromColumnName,
-            toTable: toTable.name,
-            toColumn: toColumnName,
-            type: relationship.type
-        };
+        connectionGroup.relationshipData = relationship;
 
         // Line
         const line = new Konva.Line({
             points: pathPoints,
             stroke: this.styles.connection.stroke,
             strokeWidth: this.styles.connection.strokeWidth,
-            name: 'connection-line'
+            name: 'connection-line',
+            lineCap: 'round',  // <-- ADD THIS
+            lineJoin: 'round'  // <-- AND THIS
         });
 
         connectionGroup.add(line);
@@ -855,171 +853,7 @@ export class KonvaERDRenderer {
         };
     }
 
-    /**
-     * Generate orthogonal path points
-     * @param {Object} sourcePoint - Source point
-     * @param {Object} targetPoint - Target point
-     * @returns {Array} Array of points [x1, y1, x2, y2, ...]
-     */
-    calculateOrthogonalPath(relationship, layout) {
-        const fromTableName = relationship.from ? relationship.from.table : relationship.fromTable;
-        const toTableName = relationship.to ? relationship.to.table : relationship.toTable;
-        const fromColumnName = relationship.from ? relationship.from.column : relationship.fromColumn;
-        const toColumnName = relationship.to ? relationship.to.column : relationship.toColumn;
 
-        const fromTable = this.currentSchema.tables.find(t => t.name === fromTableName);
-        const toTable = this.currentSchema.tables.find(t => t.name === toTableName);
-
-        if (!fromTable || !toTable) {
-            console.warn('Could not find tables for relationship:', relationship);
-            return [];
-        }
-
-
-        const fromPos = this.getTablePosition(fromTable.name, layout);
-        const fromSize = this.getTableSize(fromTable.name, layout);
-        const toPos = this.getTablePosition(toTable.name, layout);
-        const toSize = this.getTableSize(toTable.name, layout);
-
-        // Determine connection sides
-        const fromRight = fromPos.x + fromSize.width;
-        const toRight = toPos.x + toSize.width;
-
-        let fromSide, toSide;
-        if (fromRight < toPos.x) {
-            // fromTable is to the left of toTable
-            fromSide = 'right';
-            toSide = 'left';
-        } else if (toRight < fromPos.x) {
-            // toTable is to the left of fromTable
-            fromSide = 'left';
-            toSide = 'right';
-        } else {
-            // Tables are vertically aligned or overlapping
-            if (fromPos.x < toPos.x) {
-                fromSide = 'right';
-                toSide = 'left';
-            } else {
-                fromSide = 'left';
-                toSide = 'right';
-            }
-        }
-
-
-        // Get connection points based on column alignment and table side
-        const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTable, fromSide);
-        const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTable, toSide);
-
-
-        const points = [sourcePoint.x, sourcePoint.y];
-        const standoff = 30; // How far out from the table the first segment goes
-
-
-        let currentX = sourcePoint.x;
-        let currentY = sourcePoint.y;
-
-        // Obstacles: all other tables' bounding boxes (excluding source and target)
-        const obstacles = this.currentSchema.tables
-            .filter(t => t.name !== fromTable.name && t.name !== toTable.name)
-            .map(t => {
-                const pos = this.getTablePosition(t.name, layout);
-                const size = this.getTableSize(t.name, layout);
-                // Create a slightly padded obstacle for better clearance
-                const padding = 5;
-                return {
-                    x: pos.x - padding,
-                    y: pos.y - padding,
-                    width: size.width + 2 * padding,
-                    height: size.height + 2 * padding,
-                    name: t.name
-                };
-            });
-
-        // 1. Initial segment outwards from source table
-        let nextX = currentX;
-        if (fromSide === 'left') {
-            nextX -= standoff;
-        } else { // right
-            nextX += standoff;
-        }
-        // No obstacle check needed for this short segment if standoff is reasonable
-        points.push(nextX, currentY);
-        currentX = nextX;
-
-        // Attempt a 5-segment path (typical for orthogonal routing)
-        // Path: source -> p1(currentX,currentY) -> p2 -> p3 -> p4(preTargetX, targetPoint.y) -> targetPoint
-
-        let p2Y, p3X;
-
-        // Determine primary direction of connection (horizontal or vertical dominance)
-        const dxTotal = targetPoint.x - sourcePoint.x;
-        const dyTotal = targetPoint.y - sourcePoint.y;
-
-        if (Math.abs(dxTotal) > Math.abs(dyTotal) || fromSide !== toSide) { // Prefer horizontal dominant routing or when sides are opposite
-            p2Y = (currentY + targetPoint.y) / 2;
-            if (!this.isPathClear(currentX, currentY, currentX, p2Y, obstacles)) {
-                 // If direct path to midY is blocked, try targetY directly on currentX before horizontal move
-                 if (this.isPathClear(currentX, currentY, currentX, targetPoint.y, obstacles)) {
-                    p2Y = targetPoint.y;
-                 } else { // If still blocked, use original Y and hope horizontal move clears
-                    p2Y = currentY;
-                 }
-            }
-        } else { // Prefer vertical dominant routing
-             p2Y = targetPoint.y; // Try to align Y with target first
-             if (!this.isPathClear(currentX, currentY, currentX, p2Y, obstacles)) {
-                 p2Y = currentY; // Fallback if direct Y alignment is blocked
-             }
-        }
-        points.push(currentX, p2Y);
-        currentY = p2Y;
-
-        // p3: Horizontal segment to align with target's standoff X
-        let preTargetX = targetPoint.x;
-        if (toSide === 'left') {
-            preTargetX += standoff;
-        } else { // right
-            preTargetX -= standoff;
-        }
-        p3X = preTargetX;
-
-        if (!this.isPathClear(currentX, currentY, p3X, currentY, obstacles)) {
-            // If direct horizontal path is blocked, attempt a vertical detour
-            // This part can get very complex for optimal detours.
-            // Simple: if currentY is roughly between source and target Y, try moving to sourceY or targetY
-            // and then horizontally. This is a heuristic.
-            let detourY = (Math.abs(currentY - sourcePoint.y) < Math.abs(currentY - targetPoint.y)) ? sourcePoint.y : targetPoint.y;
-            if (currentY === targetPoint.y) detourY = sourcePoint.y; // Switch if already at targetY
-
-            if(this.isPathClear(currentX, currentY, currentX, detourY, obstacles)) { // Vertical leg of detour
-                points.push(currentX, detourY);
-                currentY = detourY;
-                // Now try horizontal move at this new Y
-                if(!this.isPathClear(currentX, currentY, p3X, currentY, obstacles)) {
-                    // If still blocked, we might be stuck with a direct line or accept crossing
-                    console.warn(`Routing obstacle for ${fromTable.name} to ${toTable.name}. Path may be suboptimal.`);
-                }
-            } else {
-                 console.warn(`Routing obstacle for ${fromTable.name} to ${toTable.name}. Path may be suboptimal.`);
-            }
-        }
-        points.push(p3X, currentY);
-        currentX = p3X;
-
-        // p4: Vertical segment to align with targetPoint.y
-        if (currentY !== targetPoint.y) { // Only add if Y is different
-             if (!this.isPathClear(currentX, currentY, currentX, targetPoint.y, obstacles)) {
-                 console.warn(`Routing obstacle for final Y alignment for ${fromTable.name} to ${toTable.name}.`);
-             }
-            points.push(currentX, targetPoint.y);
-            currentY = targetPoint.y;
-        }
-
-        // Final segment into the target table
-        points.push(targetPoint.x, targetPoint.y);
-
-        return this.simplifyPath(points);
-    }
 
     /**
      * Get a connection point on the side of a table's bounding box.
@@ -1039,120 +873,521 @@ export class KonvaERDRenderer {
         return { x, y };
     }
 
-    // Helper: Check if a line segment intersects a rectangle
-    // Rect is {x, y, width, height}
-    lineIntersectsRect(x1, y1, x2, y2, rect) {
-        const padding = 1; // Collision padding
-        const rx = rect.x - padding;
-        const ry = rect.y - padding;
-        const rwidth = rect.width + 2 * padding;
-        const rheight = rect.height + 2 * padding;
 
-        // Check intersection with each side of the rectangle
-        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx, ry, rx + rwidth, ry)) return true; // Top
-        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx + rwidth, ry, rx + rwidth, ry + rheight)) return true; // Right
-        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx + rwidth, ry + rheight, rx, ry + rheight)) return true; // Bottom
-        if (this.lineSegmentsIntersect(x1, y1, x2, y2, rx, ry + rheight, rx, ry)) return true; // Left
 
-        // Check if line is fully inside (for orthogonal lines that don't cross segments but are contained)
-        // A simple check: if midpoint of line is inside rect.
-        const midX = (x1 + x2) / 2;
-        const midY = (y1 + y2) / 2;
-        if (x1 === x2 || y1 === y2) { // Only for perfectly horizontal/vertical lines
-            if (midX > rx && midX < rx + rwidth && midY > ry && midY < ry + rheight) {
-                 // Check if either endpoint is outside. If so, it must intersect.
-                 const p1_inside = (x1 >= rx && x1 <= rx + rwidth && y1 >= ry && y1 <= ry + rheight);
-                 const p2_inside = (x2 >= rx && x2 <= rx + rwidth && y2 >= ry && y2 <= ry + rheight);
-                 if (!p1_inside || !p2_inside) return true;
+
+
+
+
+    // /**
+    //  * Calculates a clean, predictable orthogonal path for a relationship line.
+    //  * This version prioritizes readability over complex obstacle avoidance.
+    //  * @param {Object} relationship - The relationship data.
+    //  * @param {Object} layout - The current layout data.
+    //  * @returns {Array} An array of points for the Konva.Line, e.g., [x1, y1, x2, y2, ...].
+    //  */
+    // calculateOrthogonalPath(relationship, layout) {
+    //     const fromTableName = relationship.from?.table || relationship.fromTable;
+    //     const toTableName = relationship.to?.table || relationship.toTable;
+    //     const fromColumnName = relationship.from?.column || relationship.fromColumn;
+    //     const toColumnName = relationship.to?.column || relationship.toColumn;
+
+    //     const fromTableData = this.currentSchema.tables.find(t => t.name === fromTableName);
+    //     const toTableData = this.currentSchema.tables.find(t => t.name === toTableName);
+
+    //     if (!fromTableData || !toTableData) {
+    //         console.warn('Could not find tables for relationship:', relationship);
+    //         return [];
+    //     }
+
+    //     const fromPos = this.getTablePosition(fromTableName, layout);
+    //     const fromSize = this.getTableSize(fromTableName, layout);
+    //     const toPos = this.getTablePosition(toTableName, layout);
+    //     const toSize = this.getTableSize(toTableName, layout);
+
+    //     const fromRightEdgeX = fromPos.x + fromSize.width;
+    //     const toRightEdgeX = toPos.x + toSize.width;
+
+    //     let sourceSide, targetSide;
+
+    //     // Determine which side of each table the connection should come from.
+    //     if (fromRightEdgeX + 30 < toPos.x) { // fromTable is clearly to the left of toTable
+    //         sourceSide = 'right';
+    //         targetSide = 'left';
+    //     } else if (toRightEdgeX + 30 < fromPos.x) { // toTable is clearly to the left of fromTable
+    //         sourceSide = 'left';
+    //         targetSide = 'right';
+    //     } else { // Tables are vertically aligned or overlapping horizontally.
+    //         // Default to an "outward" facing connection based on relative position.
+    //         if (fromPos.x < toPos.x) {
+    //             sourceSide = 'right';
+    //             targetSide = 'right';
+    //         } else {
+    //             sourceSide = 'left';
+    //             targetSide = 'left';
+    //         }
+    //     }
+
+    //     const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTableData, sourceSide);
+    //     const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTableData, targetSide);
+
+    //     const standoff = 30; // The horizontal distance the line extends from the table before turning.
+    //     const points = [];
+
+    //     points.push(sourcePoint.x, sourcePoint.y);
+
+    //     // Point 2: Standoff from source
+    //     const p2x = (sourceSide === 'right') ? sourcePoint.x + standoff : sourcePoint.x - standoff;
+    //     points.push(p2x, sourcePoint.y);
+
+    //     // Midpoint X for the main horizontal segment
+    //     const p_mid_x = (sourceSide === targetSide) 
+    //         ? Math.max(p2x, (targetSide === 'right' ? targetPoint.x + standoff : targetPoint.x - standoff)) + standoff 
+    //         : (p2x + (targetSide === 'right' ? targetPoint.x - standoff : targetPoint.x + standoff)) / 2;
+
+    //     const p3x = p_mid_x;
+    //     const p4y = targetPoint.y;
+
+    //     // Point 3: Vertical turn
+    //     points.push(p2x, p4y);
+
+    //     // Point 4: Horizontal segment to align with target standoff
+    //     const p5x = (targetSide === 'right') ? targetPoint.x + standoff : targetPoint.x - standoff;
+    //     points.push(p5x, p4y);
+
+    //     // Point 5: Standoff from target
+    //     points.push(p5x, targetPoint.y);
+
+    //     // Final Point
+    //     points.push(targetPoint.x, targetPoint.y);
+
+    //     // Return the simplified, clean path
+    //     return this.simplifyPath(points);
+    // }
+
+    // /**
+    //  * Calculates an obstacle-avoiding path for a relationship line using A*.
+    //  */
+    // calculateOrthogonalPath(relationship, layout) {
+    //     const gridSize = 20; // The resolution of our pathfinding grid.
+
+    //     const fromTableName = relationship.from?.table || relationship.fromTable;
+    //     const toTableName = relationship.to?.table || relationship.toTable;
+    //     const fromColumnName = relationship.from?.column || relationship.fromColumn;
+    //     const toColumnName = relationship.to?.column || relationship.toColumn;
+
+    //     // 1. Get Source and Target Information
+    //     const fromTableData = this.currentSchema.tables.find(t => t.name === fromTableName);
+    //     const toTableData = this.currentSchema.tables.find(t => t.name === toTableName);
+    //     if (!fromTableData || !toTableData) return [];
+
+    //     const fromPos = this.getTablePosition(fromTableName, layout);
+    //     const fromSize = this.getTableSize(fromTableName, layout);
+    //     const toPos = this.getTablePosition(toTableName, layout);
+    //     const toSize = this.getTableSize(toTableName, layout);
+
+    //     // 2. Define the Routing Grid based on diagram bounds
+    //     const bounds = this.stage.getClientRect({ skipTransform: true });
+    //     const gridWidth = Math.ceil(bounds.width / gridSize) + 1;
+    //     const gridHeight = Math.ceil(bounds.height / gridSize) + 1;
+    //     const gridOriginX = bounds.x;
+    //     const gridOriginY = bounds.y;
+
+    //     const grid = Array(gridWidth).fill(0).map(() => Array(gridHeight).fill(0));
+
+    //     // 3. Mark Obstacles on the Grid (all other tables)
+    //     const tablePadding = 1; // Number of grid cells to pad around tables
+    //     this.currentSchema.tables.forEach(table => {
+    //         if (table.name === fromTableName || table.name === toTableName) return;
+    //         const pos = this.getTablePosition(table.name, layout);
+    //         const size = this.getTableSize(table.name, layout);
+
+    //         const startX = Math.max(0, Math.floor((pos.x - gridOriginX) / gridSize) - tablePadding);
+    //         const endX = Math.min(gridWidth - 1, Math.ceil((pos.x + size.width - gridOriginX) / gridSize) + tablePadding);
+    //         const startY = Math.max(0, Math.floor((pos.y - gridOriginY) / gridSize) - tablePadding);
+    //         const endY = Math.min(gridHeight - 1, Math.ceil((pos.y + size.height - gridOriginY) / gridSize) + tablePadding);
+
+    //         for (let x = startX; x <= endX; x++) {
+    //             for (let y = startY; y <= endY; y++) {
+    //                 grid[x][y] = 1; // Mark as obstacle
+    //             }
+    //         }
+    //     });
+
+    //     // 4. Determine Start and End points for the router
+    //     const sourceSide = (fromPos.x + fromSize.width / 2 < toPos.x + toSize.width / 2) ? 'right' : 'left';
+    //     const targetSide = (toPos.x + toSize.width / 2 < fromPos.x + fromSize.width / 2) ? 'right' : 'left';
+
+    //     const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTableData, sourceSide);
+    //     const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTableData, targetSide);
+
+    //     const startNode = {
+    //         x: Math.floor((sourcePoint.x - gridOriginX) / gridSize),
+    //         y: Math.floor((sourcePoint.y - gridOriginY) / gridSize)
+    //     };
+    //     const endNode = {
+    //         x: Math.floor((targetPoint.x - gridOriginX) / gridSize),
+    //         y: Math.floor((targetPoint.y - gridOriginY) / gridSize)
+    //     };
+
+    //     // Ensure start/end nodes are not inside an obstacle (can happen with padding)
+    //     if (grid[startNode.x] && grid[startNode.x][startNode.y] === 1) grid[startNode.x][startNode.y] = 0;
+    //     if (grid[endNode.x] && grid[endNode.x][endNode.y] === 1) grid[endNode.x][endNode.y] = 0;
+
+    //     // 5. Find the Path
+    //     const router = new AStarRouter(grid);
+    //     const path = router.findPath(startNode, endNode);
+
+    //     if (!path) {
+    //         console.warn(`A* could not find a path for ${fromTableName} -> ${toTableName}. Drawing straight line.`);
+    //         return [sourcePoint.x, sourcePoint.y, targetPoint.x, targetPoint.y];
+    //     }
+
+    //     // 6. Convert Grid Path to Pixel Coordinates and Simplify
+    //     const pixelPath = path.map(p => [
+    //         p.x * gridSize + gridOriginX + gridSize / 2,
+    //         p.y * gridSize + gridOriginY + gridSize / 2
+    //     ]);
+
+    //     // Add actual start/end points for precision
+    //     pixelPath.unshift([sourcePoint.x, sourcePoint.y]);
+    //     pixelPath.push([targetPoint.x, targetPoint.y]);
+
+    //     return this.simplifyPath(pixelPath.flat());
+    // }
+
+    // /**
+    //  * Calculates an obstacle-avoiding path for a relationship line using A*.
+    //  * This is the definitive, complete version.
+    //  */
+    // calculateOrthogonalPath(relationship, layout) {
+    //     const gridSize = 20; // The resolution of our pathfinding grid.
+
+    //     const fromTableName = relationship.from?.table || relationship.fromTable;
+    //     const toTableName = relationship.to?.table || relationship.toTable;
+    //     const fromColumnName = relationship.from?.column || relationship.fromColumn;
+    //     const toColumnName = relationship.to?.column || relationship.toColumn;
+
+    //     // --- Start of Bounding Box Calculation ---
+    //     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    //     this.currentSchema.tables.forEach(table => {
+    //         const pos = this.getTablePosition(table.name, layout);
+    //         const size = this.getTableSize(table.name, layout);
+    //         minX = Math.min(minX, pos.x);
+    //         minY = Math.min(minY, pos.y);
+    //         maxX = Math.max(maxX, pos.x + size.width);
+    //         maxY = Math.max(maxY, pos.y + size.height);
+    //     });
+
+    //     const padding = 50; // Pixel padding around the diagram
+    //     const gridOriginX = minX - padding;
+    //     const gridOriginY = minY - padding;
+    //     const gridWidth = Math.ceil((maxX - minX + 2 * padding) / gridSize);
+    //     const gridHeight = Math.ceil((maxY - minY + 2 * padding) / gridSize);
+
+    //     if (!isFinite(gridWidth) || !isFinite(gridHeight)) return [];
+    //     // --- End of Bounding Box Calculation ---
+
+
+
+    //     // Get Source and Target Information
+    //     const fromTableData = this.currentSchema.tables.find(t => t.name === fromTableName);
+    //     const toTableData = this.currentSchema.tables.find(t => t.name === toTableName);
+    //     if (!fromTableData || !toTableData) return [];
+
+    //     // ** THIS WAS THE MISSING PART **
+    //     const fromPos = this.getTablePosition(fromTableName, layout);
+    //     const fromSize = this.getTableSize(fromTableName, layout);
+    //     const toPos = this.getTablePosition(toTableName, layout);
+    //     const toSize = this.getTableSize(toTableName, layout);
+    //     // ** END MISSING PART **
+
+    //     // --- ** ADD THIS SAFETY BLOCK ** ---
+    //     const MAX_GRID_CELLS = 250000; // Corresponds to a ~500x500 grid
+    //     if (gridWidth * gridHeight > MAX_GRID_CELLS) {
+    //         console.warn(`Routing grid is too large (${gridWidth}x${gridHeight}). Skipping A* for performance.`, relationship);
+    //         const fromTableName = relationship.from?.table || relationship.fromTable;
+    //         const toTableName = relationship.to?.table || relationship.toTable;
+    //         const fromPos = this.getTablePosition(fromTableName, layout);
+    //         const toPos = this.getTablePosition(toTableName, layout);
+    //         const fromSize = this.getTableSize(fromTableName, layout);
+    //         const toSize = this.getTableSize(toTableName, layout);
+    //         // Fallback to a simple line
+    //         return [fromPos.x + fromSize.width / 2, fromPos.y + fromSize.height / 2, toPos.x + toSize.width / 2, toPos.y + toSize.height / 2];
+    //     }
+    //     // --- ** END SAFETY BLOCK ** ---
+
+    //     // Create the grid for A*
+    //     const grid = Array(gridWidth).fill(0).map(() => Array(gridHeight).fill(0));
+
+    //     // Mark Obstacles on the Grid (all other tables)
+    //     const tablePadding = 1; // Number of grid cells to pad around tables
+    //     this.currentSchema.tables.forEach(table => {
+    //         // Do not treat the source and target tables as obstacles for their own connection lines
+    //         if (table.name === fromTableName || table.name === toTableName) return;
+    //         const pos = this.getTablePosition(table.name, layout);
+    //         const size = this.getTableSize(table.name, layout);
+
+    //         const startX = Math.max(0, Math.floor((pos.x - gridOriginX) / gridSize) - tablePadding);
+    //         const endX = Math.min(gridWidth - 1, Math.ceil((pos.x + size.width - gridOriginX) / gridSize) + tablePadding);
+    //         const startY = Math.max(0, Math.floor((pos.y - gridOriginY) / gridSize) - tablePadding);
+    //         const endY = Math.min(gridHeight - 1, Math.ceil((pos.y + size.height - gridOriginY) / gridSize) + tablePadding);
+
+    //         for (let x = startX; x <= endX; x++) {
+    //             for (let y = startY; y <= endY; y++) {
+    //                 if (grid[x] && grid[x][y] !== undefined) {
+    //                     grid[x][y] = 1; // Mark as obstacle
+    //                 }
+    //             }
+    //         }
+    //     });
+
+    //     // Determine Start and End points for the router
+    //     const sourceSide = (fromPos.x + fromSize.width / 2 < toPos.x + toSize.width / 2) ? 'right' : 'left';
+    //     const targetSide = (toPos.x + toSize.width / 2 < fromPos.x + fromSize.width / 2) ? 'right' : 'left';
+
+    //     const sourcePoint = this.getColumnConnectionPoint(fromPos, fromSize, fromColumnName, fromTableData, sourceSide);
+    //     const targetPoint = this.getColumnConnectionPoint(toPos, toSize, toColumnName, toTableData, targetSide);
+
+    //     const startNode = {
+    //         x: Math.round((sourcePoint.x - gridOriginX) / gridSize),
+    //         y: Math.round((sourcePoint.y - gridOriginY) / gridSize)
+    //     };
+    //     const endNode = {
+    //         x: Math.round((targetPoint.x - gridOriginX) / gridSize),
+    //         y: Math.round((targetPoint.y - gridOriginY) / gridSize)
+    //     };
+
+    //     // Ensure start/end nodes are within grid bounds
+    //     startNode.x = Math.max(0, Math.min(gridWidth - 1, startNode.x));
+    //     startNode.y = Math.max(0, Math.min(gridHeight - 1, startNode.y));
+    //     endNode.x = Math.max(0, Math.min(gridWidth - 1, endNode.x));
+    //     endNode.y = Math.max(0, Math.min(gridHeight - 1, endNode.y));
+
+    //     // Ensure start/end nodes are not inside an obstacle (can happen with padding)
+    //     if (grid[startNode.x] && grid[startNode.x][startNode.y] === 1) grid[startNode.x][startNode.y] = 0;
+    //     if (grid[endNode.x] && grid[endNode.x][endNode.y] === 1) grid[endNode.x][endNode.y] = 0;
+
+    //     // Find the Path using the A* helper
+    //     const router = new AStarRouter(grid);
+    //     const path = router.findPath(startNode, endNode);
+
+    //     if (!path) {
+    //         console.warn(`A* could not find a path for ${fromTableName} -> ${toTableName}. Drawing straight line.`);
+    //         return [sourcePoint.x, sourcePoint.y, targetPoint.x, targetPoint.y];
+    //     }
+
+    //     // Convert Grid Path to Pixel Coordinates and Simplify
+    //     const pixelPath = path.map(p => [
+    //         p.x * gridSize + gridOriginX + gridSize / 2,
+    //         p.y * gridSize + gridOriginY + gridSize / 2
+    //     ]);
+
+    //     // Add actual start/end points for precision
+    //     pixelPath.unshift([sourcePoint.x, sourcePoint.y]);
+    //     pixelPath.push([targetPoint.x, targetPoint.y]);
+
+    //     return this.simplifyPath(pixelPath.flat());
+    // }
+
+    /**
+         * Calculates an obstacle-avoiding path. This version relies entirely on the
+         * provided layout object, ensuring a consistent world view.
+         */
+    calculateOrthogonalPath(relationship) {
+        const fromTableName = relationship.from.table;
+        const toTableName = relationship.to.table;
+        console.log(`[calculateOrthogonalPath] Starting for ${fromTableName} -> ${toTableName}`);
+        const gridSize = 20;
+        const standoffGridCells = 3;
+
+        // Get live table groups
+        const fromTableGroup = this.tableGroups.get(relationship.from.table);
+        const toTableGroup = this.tableGroups.get(relationship.to.table);
+        if (!fromTableGroup || !toTableGroup) {
+            console.error(`Could not find Konva group for ${fromTableName} or ${toTableName}`);
+            return [];
+        }
+
+        const fromNode = { name: fromTableName, ...fromTableGroup.position(), ...fromTableGroup.size() };
+        const toNode = { name: toTableName, ...toTableGroup.position(), ...toTableGroup.size() };
+
+        const { sourceSide, targetSide } = this.getOptimalSides(fromNode, toNode);
+
+        // --- Bounding Box from LIVE positions ---
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        this.tableGroups.forEach(group => {
+            const pos = group.position(); const size = group.size();
+            minX = Math.min(minX, pos.x); minY = Math.min(minY, pos.y);
+            maxX = Math.max(maxX, pos.x + size.width); maxY = Math.max(maxY, pos.y + size.height);
+        });
+
+        const padding = 100; // Increase padding to give router more space
+        const gridOriginX = minX - padding; const gridOriginY = minY - padding;
+        const gridWidth = Math.ceil((maxX - minX + 2 * padding) / gridSize);
+        const gridHeight = Math.ceil((maxY - minY + 2 * padding) / gridSize);
+        if (!isFinite(gridWidth) || !isFinite(gridHeight)) return [];
+
+        const grid = Array(gridWidth).fill(0).map(() => Array(gridHeight).fill(0));
+
+        // --- Obstacle and Margin Marking ---
+        this.tableGroups.forEach(group => {
+            const pos = group.position(); const size = group.size();
+            const margin = 2; // Margin of 2 grid cells around tables
+
+            // Inner "hard wall" for the table itself
+            const startX = Math.floor((pos.x - gridOriginX) / gridSize);
+            const endX = Math.ceil((pos.x + size.width - gridOriginX) / gridSize);
+            const startY = Math.floor((pos.y - gridOriginY) / gridSize);
+            const endY = Math.ceil((pos.y + size.height - gridOriginY) / gridSize);
+            for (let x = startX; x <= endX; x++) {
+                for (let y = startY; y <= endY; y++) {
+                    if (grid[x]?.[y] !== undefined) grid[x][y] = 1; // Wall
+                }
+            }
+
+            // Outer "soft wall" margin with high cost
+            const marginStartX = Math.max(0, startX - margin);
+            const marginEndX = Math.min(gridWidth - 1, endX + margin);
+            const marginStartY = Math.max(0, startY - margin);
+            const marginEndY = Math.min(gridHeight - 1, endY + margin);
+            for (let x = marginStartX; x <= marginEndX; x++) {
+                for (let y = marginStartY; y <= marginEndY; y++) {
+                    if (grid[x]?.[y] === 0) grid[x][y] = 50; // High cost
+                }
+            }
+        });
+
+
+        const sourcePoint = this.getColumnConnectionPoint(fromNode, fromNode, relationship.from.column, fromTableGroup.tableData, sourceSide);
+        const targetPoint = this.getColumnConnectionPoint(toNode, toNode, relationship.to.column, toTableGroup.tableData, targetSide);
+
+        const startNode = { x: Math.round((sourcePoint.x - gridOriginX) / gridSize) + (sourceSide === 'right' ? standoffGridCells : -standoffGridCells), y: Math.round((sourcePoint.y - gridOriginY) / gridSize) };
+        const endNode = { x: Math.round((targetPoint.x - gridOriginX) / gridSize) + (targetSide === 'right' ? -standoffGridCells : standoffGridCells), y: Math.round((targetPoint.y - gridOriginY) / gridSize) };
+
+        // Ensure start/end points are clear
+        const clearRadius = standoffGridCells;
+        for (let dx = -clearRadius; dx <= clearRadius; dx++) {
+            for (let dy = -clearRadius; dy <= clearRadius; dy++) {
+                if (grid[startNode.x + dx]?.[startNode.y + dy] !== undefined) grid[startNode.x + dx][startNode.y + dy] = 0;
+                if (grid[endNode.x + dx]?.[endNode.y + dy] !== undefined) grid[endNode.x + dx][endNode.y + dy] = 0;
             }
         }
-        return false;
+
+        const router = new AStarRouter(grid);
+        const path = router.findPath(startNode, endNode);
+
+        if (!path) { console.warn(`A* could not find a path for ${relationship.from.table} -> ${relationship.to.table}.`); return []; }
+
+        this.drawnPaths.add(path.map(p => `${p.x},${p.y}`).join('|'));
+
+        const pixelPath = path.map(p => [p.x * gridSize + gridOriginX + gridSize / 2, p.y * gridSize + gridOriginY + gridSize / 2]);
+
+        // Rebuild the final path with the standoff segments
+        const firstPathPoint = { x: pixelPath[0][0], y: pixelPath[0][1] };
+        const lastPathPoint = { x: pixelPath[pixelPath.length - 1][0], y: pixelPath[pixelPath.length - 1][1] };
+        pixelPath.unshift([firstPathPoint.x, sourcePoint.y]);
+        pixelPath.unshift([sourcePoint.x, sourcePoint.y]);
+        pixelPath.push([lastPathPoint.x, targetPoint.y]);
+        pixelPath.push([targetPoint.x, targetPoint.y]);
+
+        return this.simplifyPath(pixelPath.flat());
     }
 
-    // Helper: Check if two line segments intersect
-    lineSegmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
-        const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-        if (den === 0) return false; // Parallel or collinear
+    getOptimalSides(fromNode, toNode) {
+        console.log(`%c[getOptimalSides] Determining sides for ${fromNode.name} -> ${toNode.name}`, 'color: blue');
 
-        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
-        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+        const fromCenter = fromNode.x + fromNode.width / 2;
+        const toCenter = toNode.x + toNode.width / 2;
 
-        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
-    }
+        let sourceSide, targetSide;
 
-    // Helper: Check if a path segment is clear of obstacles
-    isPathClear(x1, y1, x2, y2, obstacles) {
-        for (const obs of obstacles) {
-            if (this.lineIntersectsRect(x1, y1, x2, y2, obs)) {
-                return false; // Path is blocked
+        // Determine the primary horizontal relationship
+        if (fromNode.x + fromNode.width < toNode.x) {
+            // fromNode is entirely to the left of toNode
+            sourceSide = 'right';
+            targetSide = 'left';
+            console.log(`[getOptimalSides] Choice: from is LEFT of to. Sides: [${sourceSide}, ${targetSide}]`);
+        } else if (toNode.x + toNode.width < fromNode.x) {
+            // toNode is entirely to the left of fromNode
+            sourceSide = 'left';
+            targetSide = 'right';
+            console.log(`[getOptimalSides] Choice: from is RIGHT of to. Sides: [${sourceSide}, ${targetSide}]`);
+        } else {
+            // Tables are vertically overlapping. Choose sides to go "outward".
+            if (fromCenter < toCenter) {
+                sourceSide = 'right';
+                targetSide = 'left';
+            } else {
+                sourceSide = 'left';
+                targetSide = 'right';
             }
+            console.log(`[getOptimalSides] Choice: Vertically aligned. Sides: [${sourceSide}, ${targetSide}]`);
         }
-        return true; // Path is clear
+
+        return { sourceSide, targetSide };
     }
 
-    // Helper: Simplify path by removing redundant collinear points
+    /**
+     * Helper: Simplify path by removing redundant collinear points.
+     * This is crucial for creating clean lines.
+     */
     simplifyPath(points) {
-        if (points.length <= 4) return points;
-        const simplified = [points[0], points[1]];
-        for (let i = 2; i < points.length - 2; i += 2) {
-            const x1 = simplified[simplified.length - 2];
-            const y1 = simplified[simplified.length - 1];
-            const x2 = points[i];
-            const y2 = points[i + 1];
-            const x3 = points[i + 2];
-            const y3 = points[i + 3];
+        if (points.length <= 4) return points; // Cannot simplify
 
+        const simplified = [points[0], points[1]];
+
+        for (let i = 2; i < points.length - 2; i += 2) {
+            const [x1, y1] = [simplified[simplified.length - 2], simplified[simplified.length - 1]];
+            const [x2, y2] = [points[i], points[i + 1]];
+            const [x3, y3] = [points[i + 2], points[i + 3]];
+
+            // Check for collinearity (both points are on the same horizontal or vertical line)
             const isCollinear = (x1 === x2 && x2 === x3) || (y1 === y2 && y2 === y3);
+
             if (!isCollinear) {
                 simplified.push(x2, y2);
             }
         }
+
+        // Add the last point
         simplified.push(points[points.length - 2], points[points.length - 1]);
 
-        // Final check: if last two points are same as third to last two, remove last two
-        if (simplified.length >=6 &&
-            simplified[simplified.length-1] === simplified[simplified.length-3] &&
-            simplified[simplified.length-2] === simplified[simplified.length-4]) {
-            simplified.pop();
-            simplified.pop();
-        }
         return simplified;
     }
 
 
     /**
-     * Add relationship markers (e.g., arrows)
-     * @param {Konva.Group} connectionGroup - Connection group
-     * @param {Object} connectionPoints - Source and target points
-     * @param {Object} relationship - Relationship data
-     */
+      * Adds circular markers at the start and end of a connection line.
+      */
     addRelationshipMarkers(connectionGroup, connectionPoints, relationship) {
-        const dx = connectionPoints.target.x - connectionPoints.source.x;
-        const dy = connectionPoints.target.y - connectionPoints.source.y;
-        const angle = Math.atan2(dy, dx);
+        const markerRadius = 5;
+        const markerStrokeWidth = 2;
 
-        const arrowLength = 10;
-        const arrowAngle = Math.PI / 6;
-
-        const arrowPoints = [
-            0, 0,
-            -arrowLength, -arrowAngle,
-            -arrowLength, arrowAngle
-        ];
-
-        const arrow = new Konva.Line({
-            points: arrowPoints,
+        // Start marker
+        const startMarker = new Konva.Circle({
+            x: connectionPoints.source.x,
+            y: connectionPoints.source.y,
+            radius: markerRadius,
+            fill: this.styles.table.background, // White fill
             stroke: this.styles.connection.stroke,
-            strokeWidth: this.styles.connection.strokeWidth,
-            closed: true,
-            fill: this.styles.connection.stroke,
-            name: 'arrow-marker'
+            strokeWidth: markerStrokeWidth,
+            name: 'start-marker' // Critical for the drag-trail fix
         });
 
-        arrow.position({ x: connectionPoints.target.x, y: connectionPoints.target.y });
-        arrow.rotation(angle * 180 / Math.PI);
+        // End marker
+        const endMarker = new Konva.Circle({
+            x: connectionPoints.target.x,
+            y: connectionPoints.target.y,
+            radius: markerRadius,
+            fill: this.styles.table.background,
+            stroke: this.styles.connection.stroke,
+            strokeWidth: markerStrokeWidth,
+            name: 'end-marker' // Critical for the drag-trail fix
+        });
 
-        connectionGroup.add(arrow);
+        connectionGroup.add(startMarker);
+        connectionGroup.add(endMarker);
     }
 
     /**
@@ -1291,40 +1526,49 @@ export class KonvaERDRenderer {
         this.tablesLayer.draw();
     }
     onDrag(event, data, element) {
-        this.updateConnectionsForTable(data.name, element.x(), element.y());
-    }
-    onDragEnd(event, data, element) {
-        // Update layout data
-        if (this.currentLayout && this.currentLayout.tables) {
-            const table = this.currentLayout.tables.find(t => t.name === data.name);
-            if (table) {
-                table.x = element.x();
-                table.y = element.y();
-            }
+        // This handler provides smooth, LIVE feedback during the drag.
+        console.log(`Dragging ${data.name}...`);
+
+        // 1. Update the layout object with the table's current position.
+        const tableInLayout = this.currentLayout.tables.find(t => t.name === data.name);
+        if (tableInLayout) {
+            tableInLayout.x = element.x();
+            tableInLayout.y = element.y();
         }
+
+        // 2. Redraw connections for this table.
+        this.updateConnectionsForTable(data.name);
+
+        // 3. IMPORTANT: Tell Konva to redraw the connections layer on the next frame.
+        this.connectionsLayer.batchDraw();
+    }
+
+    onDragEnd(event, data, element) {
+        // When the drag is finished, we ensure the entire diagram is in a consistent state.
+        console.log(`Drag ended for ${data.name}. Finalizing layout.`);
+
+        // The layout object is already up-to-date from the onDrag handler.
+        // We just do a final redraw of all connections to clean up any artifacts.
+        this.redrawAllConnections();
 
         if (this.eventBus) {
             this.eventBus.emit('diagram:changed');
         }
     }
 
-    /**
-     * Update connections for a moved table
-     * @param {string} tableName - Table name
-     * @param {number} newX - New X position
-     * @param {number} newY - New Y position
-     */
-    updateConnectionsForTable(tableName, newX, newY) {
-        // Update layout data temporarily
-        if (this.currentLayout && this.currentLayout.tables) {
-            const table = this.currentLayout.tables.find(t => t.name === tableName);
-            if (table) {
-                table.x = newX;
-                table.y = newY;
-            }
-        }
+    redrawAllConnections() {
+        // Clear all drawn path data for the A* router
+        this.drawnPaths.clear();
 
-        // Redraw affected connections
+        this.connectionLines.forEach((connectionGroup, key) => {
+            this.updateConnectionLine(connectionGroup, connectionGroup.relationshipData);
+        });
+    }
+
+    /**
+      * Update connections for a moved table by reading from the currentLayout state.
+      */
+    updateConnectionsForTable(tableName) {
         this.connectionLines.forEach((connectionGroup, key) => {
             const relationship = connectionGroup.relationshipData;
             if (relationship && (relationship.fromTable === tableName || relationship.toTable === tableName)) {
@@ -1337,21 +1581,37 @@ export class KonvaERDRenderer {
      * Update a connection line
      * @param {Konva.Group} connectionGroup - Connection group
      * @param {Object} relationship - Relationship data
+     * Update a connection line, ensuring old markers are destroyed before creating new ones.
+     * This version correctly defines sourcePoint and targetPoint.
      */
     updateConnectionLine(connectionGroup, relationship) {
+        // Find and destroy all previous markers to prevent trails.
+        connectionGroup.find('.start-marker').forEach(marker => marker.destroy());
+        connectionGroup.find('.end-marker').forEach(marker => marker.destroy());
+
         const pathPoints = this.calculateOrthogonalPath(relationship, this.currentLayout);
         const line = connectionGroup.findOne('.connection-line');
-        if (line) {
-            line.points(pathPoints);
-        }
 
-        // Update markers
-        connectionGroup.find('Line').forEach(marker => {
-            if (marker.name() !== 'connection-line') {
-                marker.destroy();
+        // If a path is found, update the line and markers.
+        if (pathPoints && pathPoints.length > 0) {
+            if (line) {
+                line.points(pathPoints);
             }
-        });
-        this.addRelationshipMarkers(connectionGroup, { source: { x: pathPoints[0], y: pathPoints[1] }, target: { x: pathPoints[pathPoints.length - 2], y: pathPoints[pathPoints.length - 1] } }, relationship);
+
+            // ** THIS IS THE FIX **
+            // We must define sourcePoint and targetPoint here from the new path.
+            const sourcePoint = { x: pathPoints[0], y: pathPoints[1] };
+            const targetPoint = { x: pathPoints[pathPoints.length - 2], y: pathPoints[pathPoints.length - 1] };
+
+            // Add the new markers
+            this.addRelationshipMarkers(connectionGroup, { source: sourcePoint, target: targetPoint }, relationship);
+
+        } else {
+            // If no path is found (e.g., during a complex drag), hide the line.
+            if (line) {
+                line.points([]);
+            }
+        }
 
         this.connectionsLayer.batchDraw();
     }
@@ -1468,15 +1728,19 @@ export class KonvaERDRenderer {
      */
     updateLayout(layout) {
         this.currentLayout = layout;
+
+        // Move all tables to their new positions from the layout.
         this.tableGroups.forEach((group, name) => {
-            const pos = this.getTablePosition(name, layout);
-            group.position(pos);
+            const tableLayout = layout.tables.find(t => t.name === name);
+            if (tableLayout) {
+                group.position({ x: tableLayout.x, y: tableLayout.y });
+            }
         });
-        this.connectionLines.forEach((group, key) => {
-            this.updateConnectionLine(group, group.relationshipData);
-        });
+
         this.tablesLayer.draw();
-        this.connectionsLayer.draw();
+
+        // Redraw all connections based on the new layout.
+        this.redrawAllConnections();
     }
 
     /**
@@ -1533,7 +1797,7 @@ export class KonvaERDRenderer {
                         height: columnRect.height,
                     };
                 } else {
-                     // Fallback to table if specific column visual not found
+                    // Fallback to table if specific column visual not found
                     konvaElement = tableGroup;
                     elementBounds = tableGroup.getClientRect();
                 }
@@ -1542,7 +1806,7 @@ export class KonvaERDRenderer {
             // Find relationship
             const relKey = `${targetItem.fromTable}-${targetItem.fromColumn || targetItem.data.from.column}-${targetItem.toTable}-${targetItem.toColumn || targetItem.data.to.column}`;
             konvaElement = this.connectionLines.get(relKey);
-             if (konvaElement) {
+            if (konvaElement) {
                 elementBounds = konvaElement.getClientRect();
             }
         }
@@ -1590,7 +1854,7 @@ export class KonvaERDRenderer {
             this.uiLayer.add(this.searchHighlightShape);
             this.uiLayer.batchDraw(); // Use batchDraw for efficiency
         }
-         // Also select the table in the properties panel if it's a table or column
+        // Also select the table in the properties panel if it's a table or column
         if (targetItem.type === 'table' && this.eventBus) {
             this.eventBus.emit('table:selected', targetItem.data);
         } else if (targetItem.type === 'column' && this.eventBus) {
@@ -1609,5 +1873,100 @@ export class KonvaERDRenderer {
             this.searchHighlightShape = null;
             this.uiLayer.batchDraw();
         }
+    }
+}
+
+class AStarRouter {
+    constructor(grid) {
+        this.grid = grid;
+        this.width = grid.length;
+        this.height = grid[0].length;
+    }
+
+    findPath(start, end) {
+        const openSet = new Set([`${start.x},${start.y}`]);
+        const cameFrom = new Map();
+
+        const gScore = {}; // Cost from start to current
+        for (let x = 0; x < this.width; x++) for (let y = 0; y < this.height; y++) gScore[`${x},${y}`] = Infinity;
+        gScore[`${start.x},${start.y}`] = 0;
+
+        const fScore = {}; // Total cost (gScore + heuristic)
+        for (let x = 0; x < this.width; x++) for (let y = 0; y < this.height; y++) fScore[`${x},${y}`] = Infinity;
+        fScore[`${start.x},${start.y}`] = this.heuristic(start, end);
+
+        while (openSet.size > 0) {
+            let currentKey = null;
+            let minFScore = Infinity;
+            for (const key of openSet) {
+                if (fScore[key] < minFScore) {
+                    minFScore = fScore[key];
+                    currentKey = key;
+                }
+            }
+
+            const current = this.keyToPoint(currentKey);
+
+            if (current.x === end.x && current.y === end.y) {
+                return this.reconstructPath(cameFrom, currentKey);
+            }
+
+            openSet.delete(currentKey);
+
+            this.getNeighbors(current).forEach(neighbor => {
+                const neighborKey = `${neighbor.x},${neighbor.y}`;
+                // Penalize turns to get straighter lines
+                const movementCost = 1 + this.grid[neighbor.x][neighbor.y]; // Base cost of 1 + penalty
+                const turnPenalty = this.isTurn(cameFrom, currentKey, neighbor) ? 25 : 0;
+                const tentativeGScore = gScore[currentKey] + 1 + turnPenalty;
+
+                if (tentativeGScore < gScore[neighborKey]) {
+                    cameFrom.set(neighborKey, currentKey);
+                    gScore[neighborKey] = tentativeGScore;
+                    fScore[neighborKey] = tentativeGScore + this.heuristic(neighbor, end);
+                    if (!openSet.has(neighborKey)) {
+                        openSet.add(neighborKey);
+                    }
+                }
+            });
+        }
+        return null; // No path found
+    }
+
+    isTurn(cameFrom, currentKey, neighbor) {
+        if (!cameFrom.has(currentKey)) return false;
+        const parentKey = cameFrom.get(currentKey);
+        const parent = this.keyToPoint(parentKey);
+        const current = this.keyToPoint(currentKey);
+        return (current.x - parent.x) !== (neighbor.x - current.x) || (current.y - parent.y) !== (neighbor.y - current.y);
+    }
+
+    heuristic(a, b) {
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); // Manhattan distance
+    }
+
+    keyToPoint(key) {
+        const [x, y] = key.split(',').map(Number);
+        return { x, y };
+    }
+
+    getNeighbors(point) {
+        const neighbors = [];
+        const { x, y } = point;
+        // The check changes from `=== 0` to `!== 1` to allow costly cells
+        if (x > 0 && this.grid[x - 1][y] !== 1) neighbors.push({ x: x - 1, y });
+        if (x < this.width - 1 && this.grid[x + 1][y] !== 1) neighbors.push({ x: x + 1, y });
+        if (y > 0 && this.grid[x][y - 1] !== 1) neighbors.push({ x, y: y - 1 });
+        if (y < this.height - 1 && this.grid[x][y + 1] !== 1) neighbors.push({ x, y: y + 1 });
+        return neighbors;
+    }
+
+    reconstructPath(cameFrom, currentKey) {
+        const totalPath = [this.keyToPoint(currentKey)];
+        while (cameFrom.has(currentKey)) {
+            currentKey = cameFrom.get(currentKey);
+            totalPath.unshift(this.keyToPoint(currentKey));
+        }
+        return totalPath;
     }
 }

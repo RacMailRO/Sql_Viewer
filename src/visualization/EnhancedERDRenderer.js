@@ -62,18 +62,9 @@ export class EnhancedERDRenderer extends ERDRenderer {
     /**
      * Update settings from settings panel
      */
-    updateSettings(newSettings) {
+     updateSettings(newSettings) {
         this.settings = { ...this.settings, ...newSettings };
-        
-        // Update grid visibility
-        if (this.gridOverlay) {
-            this.gridOverlay.style('display', this.settings.showGrid ? 'block' : 'none');
-        }
-        
-        // Redraw with new settings
-        if (this.currentData) {
-            this.render(this.currentData);
-        }
+        console.log('[Layout] Settings updated:', this.settings);
     }
 
     /**

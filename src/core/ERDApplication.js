@@ -585,8 +585,18 @@ export class ERDApplication {
                 }))
             };
 
-            // Generate initial layout
-            const layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
+            // Generate initial layout with canvas bounds
+            const canvasBounds = {
+                width: this.elements.canvas.clientWidth || 1200,
+                height: this.elements.canvas.clientHeight || 800,
+            };
+            const layout = this.intelligentLayoutAlgorithm.calculateLayout(schema, canvasBounds);
+
+
+            // Check if layout generation was successful
+            if (!layout || !layout.tables) {
+                throw new Error("Layout generation failed or returned an invalid structure.");
+            }
 
             this.diagramState.setLayout(layout);
 
@@ -608,25 +618,17 @@ export class ERDApplication {
 
             console.log('Schema loaded successfully:', schema);
 
-            // Auto-apply layout and reset zoom for better initial positioning
-            setTimeout(() => {
-                try {
-                    this.applyAutoLayout();
-                    setTimeout(() => {
-                        try {
-                            this.resetZoom();
-                        } catch (resetError) {
-                            console.error('Reset zoom error:', resetError);
-                        }
-                    }, 100);
-                } catch (layoutError) {
-                    console.error('Auto layout error:', layoutError);
-                }
-            }, 100);
+            // ** ADD THIS LINE **
+            this.resetZoom(); // This will fit the diagram to the view.
+
+
 
         } catch (error) {
-            console.error('Error handling schema load:', error);
-            this.showError('Failed to render schema');
+            console.error('--- DETAILED ERROR in handleSchemaLoaded ---');
+            console.error('The specific error is:', error); // This will show the real error message
+            console.error('Stack trace:', error.stack); // This will show the exact line
+            console.error('-----------------------------------------');
+            this.showError(`Failed to render schema: ${error.message}`);
         }
     }
 
@@ -681,14 +683,25 @@ export class ERDApplication {
     }
 
     /**
-     * Apply auto layout
-     */
-    applyAutoLayout() {
+      * Apply auto layout. This version uses the current (already formatted) schema data.
+      */
+    /**
+      * Apply auto layout using the single, consistent schema format.
+      */
+  applyAutoLayout() {
         try {
             this.showLoading('Applying auto layout...');
+
+            // ** THE CRITICAL FIX IS HERE **
+            // We no longer re-map the schema. We build the input for the layout
+            // algorithm from the current state of the diagram.
+            
+            // 1. Get the current schema (tables and relationships).
             const schema = this.schemaModel.getSchema();
+            
+            // 2. The relationships are already in the correct format from the initial load.
             const schemaForLayout = {
-                ...schema,
+                tables: schema.tables,
                 relationships: schema.relationships.map(r => ({
                     sourceTable: r.from.table,
                     sourceColumn: r.from.column,
@@ -698,79 +711,29 @@ export class ERDApplication {
                 }))
             };
 
-            // Ensure schema and renderer are present
-            if (!schema || !schema.tables || schema.tables.length === 0 || !this.renderer) {
+            if (!schema || schema.tables.length === 0 || !this.renderer) {
                 this.hideLoading();
                 return;
             }
-            // const schemaForLayout = {
-            //     ...schema,
-            //     relationships: schema.relationships.map(r => ({
-            //         sourceTable: r.from.table,
-            //         sourceColumn: r.from.column,
-            //         targetTable: r.to.table,
-            //         targetColumn: r.to.column,
-            //         type: r.type
-            //     }))
-            // };
+            
+            // 3. Update settings and calculate the new layout.
+            this.intelligentLayoutAlgorithm.updateSettings(this.settings);
+            const canvasBounds = {
+                width: this.elements.canvas.clientWidth || 1200,
+                height: this.elements.canvas.clientHeight || 800,
+            };
+            const layout = this.intelligentLayoutAlgorithm.calculateLayout(schemaForLayout, canvasBounds);
 
-            let layout;
-            if (this.intelligentLayoutAlgorithm) {
-                this.intelligentLayoutAlgorithm.updateSettings(this.settings); // Pass current app settings
-
-                let canvasWidth = this.elements.canvas.clientWidth || this.renderer.stage.width();
-                let canvasHeight = this.elements.canvas.clientHeight || this.renderer.stage.height();
-
-                if (!canvasWidth || canvasWidth < 100) { // Ensure minimum dimensions
-                    canvasWidth = 800;
-                    console.warn("Canvas width was too small or zero for layout, defaulted to 800.");
-                }
-                if (!canvasHeight || canvasHeight < 100) { // Ensure minimum dimensions
-                    canvasHeight = 600;
-                    console.warn("Canvas height was too small or zero for layout, defaulted to 600.");
-                }
-
-                const canvasBounds = {
-                    width: canvasWidth,
-                    height: canvasHeight
-
-                };
-                layout = this.intelligentLayoutAlgorithm.calculateLayout(schemaForLayout, canvasBounds);
-            } else {
-                // Fallback to basic layout algorithm if intelligent one is not available
-                console.warn("IntelligentLayoutAlgorithm not available, using basic layout.");
-                layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
-            }
-
-
-            console.log('Applying layout:', layout); // See what the layout object looks like
-
-            // Check if it's valid before proceeding
-            if (!layout) {
-                console.error("Layout calculation failed, returned undefined. Aborting layout update.");
-                this.hideLoading();
-                return; // Exit the function gracefully
-            }
-
+            // 4. Update the diagram with the new layout.
+            console.log("Applying layout:", layout);
             this.diagramState.setLayout(layout);
-            this.renderer.updateLayout(layout); // This should re-render tables and connections
-
-            // Calculate layout statistics
-            // Ensure layout.tables exists and renderer.stage is available for bounds.
-            const bounds = (this.renderer && this.renderer.stage) ? {
-                width: this.renderer.stage.width(),
-                height: this.renderer.stage.height()
-            } : { width: 800, height: 600 }; // Fallback bounds
+            this.renderer.updateLayout(layout); // This will re-render everything correctly.
 
             if (this.intelligentLayoutAlgorithm && layout && layout.tables) {
-                const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
-                this.showLayoutStats(stats);
+                const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(schemaForLayout.relationships);
+                console.log("Layout stats:", stats);
             }
-
-
-            // const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
-            // this.showLayoutStats(stats);
-
+            
         } catch (error) {
             console.error('Auto layout error:', error);
             this.showError('Failed to apply auto layout');
@@ -778,7 +741,6 @@ export class ERDApplication {
             this.hideLoading();
         }
     }
-
     /**
      * Show layout statistics
      * @param {Object} stats - Layout statistics
