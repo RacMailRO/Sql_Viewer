@@ -167,6 +167,7 @@ export class ERDApplication {
             tooltip: document.getElementById('tooltip'),
 
             // New button
+
             exitIsolationBtn: document.getElementById('exit-isolation-btn'),
 
             // Settings panel elements
@@ -174,6 +175,7 @@ export class ERDApplication {
             settingsPanel: document.getElementById('settings-panel'),
             settingsOverlay: document.getElementById('settings-overlay'),
             closeSettingsBtn: document.getElementById('close-settings-btn')
+
         };
 
         // Validate required elements
