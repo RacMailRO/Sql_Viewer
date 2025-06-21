@@ -64,7 +64,7 @@ export class FilteringManager {
             type: 'isolation', // Consistent type for isolation filters
             name: `Isolated: ${tableName}`,
             description: `Showing table "${tableName}" and its direct connections.`,
-            apply: (data) // data here will be originalData when applyFilter is called after clearing
+            apply: (data) => // data here will be originalData when applyFilter is called after clearing
             {
                 const tablesToShow = this.originalData.tables.filter(t => directlyConnectedTableNames.has(t.name));
                 // Filter relationships again based on the tablesToShow, ensuring both ends are present
