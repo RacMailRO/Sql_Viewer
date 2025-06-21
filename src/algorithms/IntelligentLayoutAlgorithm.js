@@ -920,27 +920,7 @@ export class IntelligentLayoutAlgorithm {
         });
     }
 
-    /**
-     * Generate final layout result
-     */
-    generateLayoutResult(tables, relationships) {
-        const layoutTables = tables.map(table => ({
-            ...table,
-            x: this.tablePositions.get(table.name)?.x || 0,
-            y: this.tablePositions.get(table.name)?.y || 0,
-            width: this.tableDimensions.get(table.name)?.width || 200,
-            height: this.tableDimensions.get(table.name)?.height || 100
-        }));
-        
-        return {
-            tables: layoutTables,
-            relationships: relationships,
-            clusters: this.clusters,
-            bounds: this.bounds,
-            statistics: this.generateLayoutStatistics()
-        };
-    }
-
+   
     /**
      * Position orphan tables in a separate grid
      */
@@ -1020,6 +1000,7 @@ export class IntelligentLayoutAlgorithm {
      * Generate final layout result
      */
     generateLayoutResult(tables, relationships) {
+        // Generate the initial layout for all tables using the calculated positions
         const allTableNames = tables.map(t => t.name);
         const layoutTables = tables.map(table => ({
             ...table,
@@ -1029,25 +1010,27 @@ export class IntelligentLayoutAlgorithm {
             height: this.tableDimensions.get(table.name)?.height || 100
         }));
 
-        // Position orphan tables after initial layout of all tables
+        // Identify and position orphan tables separately at the bottom
         this.positionOrphanTables(allTableNames, layoutTables);
 
-        // Re-map positions for layoutTables after orphan positioning,
-        // as positionOrphanTables might have updated this.tablePositions
+        // Re-map the final positions for ALL tables, as orphans have now been moved.
         const finalLayoutTables = tables.map(table => ({
             ...table,
-            x: this.tablePositions.get(table.name)?.x || 0, // Get potentially updated position
-            y: this.tablePositions.get(table.name)?.y || 0, // Get potentially updated position
+            x: this.tablePositions.get(table.name)?.x || 0,
+            y: this.tablePositions.get(table.name)?.y || 0,
             width: this.tableDimensions.get(table.name)?.width || 200,
             height: this.tableDimensions.get(table.name)?.height || 100
         }));
+
+        // Now, generate statistics based on the final, complete layout
+        const statistics = this.generateLayoutStatistics();
 
         return {
             tables: finalLayoutTables,
             relationships: relationships,
             clusters: this.clusters,
             bounds: this.bounds, // Bounds might have been updated by orphan placement
-            statistics: this.generateLayoutStatistics()
+            statistics: statistics
         };
     }
 

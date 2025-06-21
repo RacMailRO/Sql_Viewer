@@ -27,16 +27,16 @@ export class ERDApplication {
         this.layoutAlgorithm = null;
         this.searchManager = null;
         this.filteringManager = null;
-        
+
         // UI elements
         this.elements = {};
-        
+
         // Application state
         this.isInitialized = false;
-        
+
         // Settings
         this.settings = {
-            tableDistance: 150,
+            minTableDistance: 150,
             layoutPadding: 50,
             debugEnabled: false
         };
@@ -114,13 +114,13 @@ export class ERDApplication {
             await this.initializeComponents();
             this.setupEventListeners();
             this.setupKeyboardShortcuts();
-            
+
             this.isInitialized = true;
             console.log('ERD Application initialized successfully');
-            
+
             // Show welcome message initially
             this.showWelcomeMessage();
-            
+
         } catch (error) {
             console.error('Failed to initialize ERD Application:', error);
             this.showError('Failed to initialize application');
@@ -138,7 +138,7 @@ export class ERDApplication {
             loadingOverlay: document.getElementById('loading-overlay'),
             propertyPanel: document.getElementById('property-panel'),
             panelContent: document.getElementById('panel-content'),
-            
+
             // Buttons
             importBtn: document.getElementById('import-btn'),
             welcomeImportBtn: document.getElementById('welcome-import-btn'),
@@ -148,21 +148,21 @@ export class ERDApplication {
             undoBtn: document.getElementById('undo-btn'),
             redoBtn: document.getElementById('redo-btn'),
             closePanelBtn: document.getElementById('close-panel-btn'),
-            
+
             // File input
             fileInput: document.getElementById('file-input'),
-            
+
             // Export dialog
             exportDialog: document.getElementById('export-dialog'),
             closeExportDialog: document.getElementById('close-export-dialog'),
             cancelExport: document.getElementById('cancel-export'),
             confirmExport: document.getElementById('confirm-export'),
-            
+
             // Status bar
             zoomLevel: document.getElementById('zoom-level'),
             tableCount: document.getElementById('table-count'),
             relationshipCount: document.getElementById('relationship-count'),
-            
+
             // Tooltip
             tooltip: document.getElementById('tooltip'),
 
@@ -200,7 +200,7 @@ export class ERDApplication {
         this.renderer = new KonvaERDRenderer(this.elements.canvas, {
             eventBus: this.eventBus
         });
-        
+
         // Initialize Konva renderer
         await this.renderer.init();
 
@@ -213,28 +213,28 @@ export class ERDApplication {
         this.exportManager = new KonvaExportManager({
             eventBus: this.eventBus
         });
-        
+
         // Initialize layout manager
         this.layoutManager = new LayoutManager(this.eventBus);
-        
+
         // Initialize properties panel
         this.propertiesPanel = new PropertiesPanel(this.eventBus);
-        
+
         // Initialize Konva export manager
         await this.exportManager.init();
 
         // Initialize layout algorithm
         this.layoutAlgorithm = new LayoutAlgorithm(); // Basic fallback
-        
+
         // Initialize intelligent layout algorithm with current settings
         this.intelligentLayoutAlgorithm = new IntelligentLayoutAlgorithm(this.settings);
-        
+
         // Initialize search manager
         this.searchManager = new SearchManager(this.eventBus);
-        
+
         // Initialize filtering manager
         this.filteringManager = new FilteringManager(this.eventBus);
-        
+
         // Initialize statistical analyzer (placeholder - will be created when needed)
         this.statisticalAnalyzer = null;
     }
@@ -257,7 +257,7 @@ export class ERDApplication {
             if (event.target.files && event.target.files.length > 0) {
                 const file = event.target.files[0];
                 const fileExtension = file.name.split('.').pop().toLowerCase();
-                
+
                 let loadingMessage = 'Processing schema...';
                 if (fileExtension === 'csv') {
                     loadingMessage = 'Parsing CSV and generating relationships...';
@@ -268,9 +268,9 @@ export class ERDApplication {
                 } else if (fileExtension === 'txt') {
                     loadingMessage = 'Parsing text schema...';
                 }
-                
+
                 this.showLoading(loadingMessage);
-                
+
                 // Small delay to ensure UI updates before processing
                 setTimeout(() => {
                     this.handleFileImport(event);
@@ -384,7 +384,7 @@ export class ERDApplication {
                 this.hideExportDialog();
             }
         });
-        
+
         // Toolbar button events
         if (this.elements.searchBtn) {
             this.elements.searchBtn.addEventListener('click', () => {
@@ -393,7 +393,7 @@ export class ERDApplication {
                 }
             });
         }
-        
+
         if (this.elements.filterBtn) {
             this.elements.filterBtn.addEventListener('click', () => {
                 if (this.filteringManager) {
@@ -401,20 +401,20 @@ export class ERDApplication {
                 }
             });
         }
-        
+
         if (this.elements.settingsBtn) {
             this.elements.settingsBtn.addEventListener('click', () => {
                 this.showSettings();
             });
         }
-        
+
         // Settings panel events
         if (this.elements.closeSettingsBtn) {
             this.elements.closeSettingsBtn.addEventListener('click', () => {
                 this.hideSettings();
             });
         }
-        
+
         if (this.elements.settingsOverlay) {
             this.elements.settingsOverlay.addEventListener('click', (event) => {
                 // Hide only if clicking on the overlay itself, not its children (the panel)
@@ -423,7 +423,7 @@ export class ERDApplication {
                 }
             });
         }
-        
+
         // Debug toggle
         const debugToggle = document.getElementById('debug-toggle');
         if (debugToggle) {
@@ -432,7 +432,7 @@ export class ERDApplication {
                 localStorage.setItem('erd_debug_enabled', e.target.checked);
                 console.log('Debug logging:', e.target.checked ? 'enabled' : 'disabled');
             });
-            
+
             // Load debug setting
             const savedDebugSetting = localStorage.getItem('erd_debug_enabled');
             if (savedDebugSetting !== null) {
@@ -444,29 +444,31 @@ export class ERDApplication {
                 window.ERD_DEBUG_ENABLED = true;
             }
         }
-        
+
         // Table distance setting
         const tableDistanceInput = document.getElementById('table-distance');
         const tableDistanceValue = document.getElementById('table-distance-value');
         if (tableDistanceInput && tableDistanceValue) {
             // Load saved setting
-            const savedDistance = localStorage.getItem('erd_table_distance');
+            const savedDistance = localStorage.getItem('erd_min_table_distance');
             if (savedDistance !== null) {
                 this.settings.tableDistance = parseInt(savedDistance);
                 tableDistanceInput.value = this.settings.tableDistance;
                 tableDistanceValue.textContent = this.settings.tableDistance + 'px';
             }
-            
+
             tableDistanceInput.addEventListener('input', (e) => {
-                this.settings.tableDistance = parseInt(e.target.value);
-                tableDistanceValue.textContent = this.settings.tableDistance + 'px';
-                localStorage.setItem('erd_table_distance', this.settings.tableDistance);
+                // USE THE NEW NAME HERE
+                this.settings.minTableDistance = parseInt(e.target.value);
+                tableDistanceValue.textContent = this.settings.minTableDistance + 'px';
+                // AND HERE
+                localStorage.setItem('erd_min_table_distance', this.settings.minTableDistance); // Also update local storage key
                 if (this.schemaModel.getSchema() && this.schemaModel.getSchema().tables.length > 0) {
                     this.applyAutoLayout();
                 }
             });
         }
-        
+
         // Layout padding setting
         const layoutPaddingInput = document.getElementById('layout-padding');
         const layoutPaddingValue = document.getElementById('layout-padding-value');
@@ -478,7 +480,7 @@ export class ERDApplication {
                 layoutPaddingInput.value = this.settings.layoutPadding;
                 layoutPaddingValue.textContent = this.settings.layoutPadding + 'px';
             }
-            
+
             layoutPaddingInput.addEventListener('input', (e) => {
                 this.settings.layoutPadding = parseInt(e.target.value);
                 layoutPaddingValue.textContent = this.settings.layoutPadding + 'px';
@@ -550,9 +552,9 @@ export class ERDApplication {
             // Just process the file
             const schema = await this.fileImporter.importFile(file);
             this.schemaModel.loadSchema(schema);
-            
+
             this.eventBus.emit('schema:loaded', this.schemaModel.getSchema());
-            
+
         } catch (error) {
             console.error('File import error:', error);
             this.eventBus.emit('schema:error', error);
@@ -571,7 +573,7 @@ export class ERDApplication {
             // Hide welcome message
             this.hideWelcomeMessage();
             this.updateExitIsolationButtonVisibility(); // Update button state on new schema load
-            
+
             const schemaForLayout = {
                 ...schema,
                 relationships: schema.relationships.map(r => ({
@@ -582,30 +584,30 @@ export class ERDApplication {
                     type: r.type
                 }))
             };
-            
+
             // Generate initial layout
             const layout = this.layoutAlgorithm.calculateLayout(schemaForLayout);
-            
+
             this.diagramState.setLayout(layout);
-            
+
             // Render the diagram
             this.renderer.render(schema, layout);
-            
+
             // Update filtering manager with new schema (if available)
             if (this.filteringManager && this.filteringManager.setSchemaData) {
                 this.filteringManager.setSchemaData(schema);
             }
-            
+
             // Run statistical analysis (if available)
             if (this.statisticalAnalyzer && this.statisticalAnalyzer.analyzeSchema) {
                 this.statisticalAnalyzer.analyzeSchema(schema);
             }
-            
+
             // Update UI
             this.updateUI();
-            
+
             console.log('Schema loaded successfully:', schema);
-            
+
             // Auto-apply layout and reset zoom for better initial positioning
             setTimeout(() => {
                 try {
@@ -621,7 +623,7 @@ export class ERDApplication {
                     console.error('Auto layout error:', layoutError);
                 }
             }, 100);
-            
+
         } catch (error) {
             console.error('Error handling schema load:', error);
             this.showError('Failed to render schema');
@@ -752,7 +754,7 @@ export class ERDApplication {
 
             this.diagramState.setLayout(layout);
             this.renderer.updateLayout(layout); // This should re-render tables and connections
-            
+
             // Calculate layout statistics
             // Ensure layout.tables exists and renderer.stage is available for bounds.
             const bounds = (this.renderer && this.renderer.stage) ? {
@@ -765,10 +767,10 @@ export class ERDApplication {
                 this.showLayoutStats(stats);
             }
 
-          
+
             // const stats = this.intelligentLayoutAlgorithm.generateLayoutStatistics(layout, bounds);
             // this.showLayoutStats(stats);
-            
+
         } catch (error) {
             console.error('Auto layout error:', error);
             this.showError('Failed to apply auto layout');
@@ -843,7 +845,7 @@ export class ERDApplication {
     async handleExport() {
         const format = document.getElementById('export-format').value;
         const filename = document.getElementById('export-filename').value;
-        
+
         try {
             const options = {
                 format,
@@ -851,9 +853,9 @@ export class ERDApplication {
                 width: this.renderer.stage.width(),
                 height: this.renderer.stage.height()
             };
-            
+
             await this.exportManager.export(this.renderer.stage, this.schemaModel.getSchema(), options);
-            
+
         } catch (error) {
             console.error('Export error:', error);
             this.showError('Failed to export diagram');
