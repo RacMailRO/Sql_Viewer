@@ -369,7 +369,7 @@ export class IntelligentLayoutAlgorithm {
     resolveRemainingOverlaps() {
         console.log('[Layout Step] resolveRemainingOverlaps');
         const tableNames = Array.from(this.tablePositions.keys());
-        const maxIterations = 200;
+        const maxIterations = 400;
         for (let i = 0; i < maxIterations; i++) {
             let overlapsFound = 0;
             for (let j = 0; j < tableNames.length; j++) {
